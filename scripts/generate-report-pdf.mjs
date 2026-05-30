@@ -1,181 +1,238 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdir, stat, writeFile } from 'node:fs/promises';
-import PDFDocument from 'pdfkit';
+import { mkdir, readFile, stat } from 'node:fs/promises';
+import { chromium } from '@playwright/test';
 
 const repoRoot = new URL('../', import.meta.url);
 const docsDir = new URL('../docs/', import.meta.url);
+const reportPath = new URL('first-pr-report.md', docsDir);
 const pdfPath = new URL('first-pr-report.pdf', docsDir);
-const artifacts = [
-  ['Gameplay', new URL('artifacts/gameplay-mobile.jpg', docsDir)],
-  ['Poster', new URL('artifacts/share-poster.jpg', docsDir)],
-  ['Collapse', new URL('artifacts/collapse-mobile.jpg', docsDir)]
-];
+const baseRef = process.env.REPORT_BASE_REF ?? 'origin/main';
+
+const reportMarkdown = await readFile(reportPath, 'utf8');
+const diffStat = git(['diff', `${baseRef}...HEAD`, '--stat']);
+const nameStatus = [
+  git(['diff', `${baseRef}...HEAD`, '--name-status']),
+  git(['diff', '--cached', '--name-status']),
+  git(['diff', '--name-status'])
+]
+  .join('\n')
+  .trim();
+const diffExcerpt = [
+  git(['diff', `${baseRef}...HEAD`, '--', 'src/game/Simulation.ts', 'src/game/EventHorizonGame.ts']),
+  git(['diff', `${baseRef}...HEAD`, '--', 'src/game/FixedStepLoop.ts', 'src/game/rng.ts']),
+  git(['diff', `${baseRef}...HEAD`, '--', 'netlify/functions/score-submit.mjs', 'gas/score-submit.gs'])
+]
+  .join('\n')
+  .slice(0, 28000);
 
 await mkdir(docsDir, { recursive: true });
 
-const diffStat = git(['diff', 'HEAD', '--stat', '--', '.', ':(exclude)docs/first-pr-report.pdf']);
-const diffExcerpt = git([
-  'diff',
-  'HEAD',
-  '--',
-  'src/game/Simulation.ts',
-  'src/game/EventHorizonGame.ts',
-  'src/game/FixedStepLoop.ts',
-  'src/game/rng.ts',
-  'netlify/functions/score-submit.mjs',
-  'gas/score-submit.gs'
-]).slice(0, 4200);
-
-const doc = new PDFDocument({
-  autoFirstPage: false,
-  bufferPages: true,
-  compress: true,
-  margins: { top: 34, right: 34, bottom: 42, left: 34 },
-  size: 'LETTER'
-});
-
-const chunks = [];
-doc.on('data', (chunk) => chunks.push(chunk));
-
-page();
-heading('Executive Summary');
-text('Event Horizon now has a first playable vertical slice on feat/first-playable: a mobile-first Vite + PixiJS v8 canvas game where the player taps and swipes to capture dark-energy orbs, delay collapse, export a share poster, and submit replay-shaped scores.');
-heading('Assumptions');
-bullets([
-  'Greenfield repo; plain Vite was the simplest viable scaffold.',
-  'Seed date remains eh-2026-05-29-alpha from the task context.',
-  'GitHub Pages uses /event-horizon/; Netlify uses VITE_BASE_PATH=/ via netlify.toml.',
-  'Custom deterministic motion is enough; Matter.js or Planck.js is not needed for this slice.',
-  'Score endpoint validates only; persistence and anti-cheat are backlog work.'
-]);
-heading('Chosen Stack and Why');
-bullets([
-  'Vite + TypeScript for a small static site and typed modules.',
-  'PixiJS v8 for WebGL-preferred 2D rendering with generated textures and a scene graph.',
-  'Fixed 60 Hz custom simulation for replayable seed + input-timing runs.',
-  'Vitest and Playwright Chrome for deterministic, endpoint, touch, poster, and smoke checks.',
-  'Netlify function plus GAS sample for minimal score endpoint options.'
-]);
-heading('Plan and Estimates');
-text('Repo guide 0.25h; scaffold 0.75h; simulation/replay 2h; Pixi scene/HUD 2h; input 1h; collapse/poster 1.25h; endpoints 0.75h; tests/artifacts 1.25h; docs/report 1.25h. Total: 10.5h.');
-heading('Backlog');
-bullets([
-  'Durable score storage and abuse limits.',
-  'Replay playback UI and CI replay verifier.',
-  'Balance phase thresholds, spawn curves, scoring, sound, haptics, and reduced motion.',
-  'GitHub Actions for build, lint, unit, and Chrome smoke tests.'
-]);
-
-page();
-heading('Files Created or Changed');
-text('AGENTS.md, README.md, index.html, package.json, package-lock.json, tsconfig.json, vite.config.ts, eslint.config.js, playwright.config.ts, netlify.toml, docs/*, gas/score-submit.gs, netlify/functions/score-submit.mjs, scripts/*, src/main.ts, src/styles.css, src/vite-env.d.ts, src/game/*, tests/*.');
-heading('Key File Notes');
-bullets([
-  'Simulation.ts: deterministic state, orb/flyby/shadow-arm mechanics, replay payloads.',
-  'EventHorizonGame.ts: PixiJS scene, scaling, HUD, collapse, poster export, score submit.',
-  'FixedStepLoop.ts and rng.ts: 60 Hz decoupled updates and mulberry32 RNG.',
-  'InputHandler.ts: pointer tap/swipe mapping to 1080 x 1920 logical space.',
-  'posterizer.ts: vertical share image from three gameplay frames.',
-  'score-submit.mjs and score-submit.gs: Netlify and GAS score endpoints.',
-  'tests/*: deterministic replay, endpoint, mobile Chrome, touch, poster, and collapse checks.'
-]);
-heading('Sample Replay Payload');
-code('{"version":1,"seed":"eh-2026-05-29-alpha","startedAt":1780051200000,"survivalMs":67421,"score":1280,"energyCaptured":87,"maxStreak":24,"tapEvents":[],"swipeEvents":[],"phaseTransitions":[]}');
-heading('Test Results');
-bullets([
-  'npm run build: passed; Vite dist generated.',
-  'npm run lint: passed.',
-  'npm run test: passed, 2 files and 5 tests.',
-  'npm run test:e2e: passed, 4 mobile Chrome tests.',
-  'npm run score:test: passed, status 200.',
-  'Local Chrome smoke, deterministic replay, touch simulation, poster export, collapse, and score submit all passed.'
-]);
-heading('Performance Notes');
-text('Stable art uses generated textures; background is static; hot-loop allocations are minimized; no expensive filters or physics engine. Poster capture uses toDataURL only on user action.');
-
-page();
-heading('Run, Git, and Deployment');
-code('npm install\nnpm run dev\nnpm run build\nnpm run lint\nnpm run test\nnpm run test:e2e\nnpm run score:test\nnpm run capture:artifacts\nnpm run report:pdf');
-code('git switch -c feat/first-playable\ngit add .\ngit commit -m "Build first playable Event Horizon slice"\ngit push -u origin feat/first-playable\ngh pr create --base main --head feat/first-playable --title "Build first playable Event Horizon slice" --body-file docs/pr-body.md');
-text('Netlify: build command VITE_BASE_PATH=/ npm run build, publish dist, functions directory netlify/functions, endpoint /.netlify/functions/score-submit, use npx netlify dev locally. GitHub Pages: default Vite base is /event-horizon/ for https://kevinhegg.github.io/event-horizon/.');
-heading('Major Snippets');
-code('await app.init({ autoStart:false, preference:"webgl", resizeTo:this.root, preserveDrawingBuffer:true });\nwhile (accumulatorMs >= FIXED_STEP_MS) step(FIXED_STEP_MS);\nexport function mulberry32(seed){ state=(state+0x6d2b79f5)>>>0; /* deterministic */ }\nif (moved >= swipeThresholdSq) onSwipe(start,end); else onTap(end);\nfunction doPost(e){ return ContentService.createTextOutput(JSON.stringify({ok:true})).setMimeType(ContentService.MimeType.JSON); }');
-heading('PR Summary');
-text('PR #1 is opened from feat/first-playable to main with project scaffold, PixiJS canvas integration, deterministic loop, gameplay slice, endpoints, tests, screenshots, README, AGENTS.md, and this PDF.');
-
-page();
-heading('Screenshots and Poster');
-for (const [label, image] of artifacts) {
-  if (existsSync(image)) {
-    doc.font('Helvetica-Bold').fontSize(9).text(label);
-    doc.image(image.pathname, { fit: [110, 190], align: 'center' });
+const html = await buildHtml();
+const browser = await chromium.launch({ channel: 'chrome' });
+const page = await browser.newPage();
+await page.setContent(html, { waitUntil: 'load' });
+await page.pdf({
+  path: pdfPath.pathname,
+  format: 'Letter',
+  printBackground: true,
+  margin: {
+    top: '0.55in',
+    right: '0.5in',
+    bottom: '0.55in',
+    left: '0.5in'
   }
-}
-heading('Diff Stat');
-code(diffStat || 'No diff stat available.');
-heading('Diff Excerpt');
-code(`${diffExcerpt}\n[Excerpt capped for PDF practicality; full diff is in PR #1.]`);
+});
+await browser.close();
 
-addPageNumbers();
-doc.end();
-const buffer = await new Promise((resolve) => doc.on('end', () => resolve(Buffer.concat(chunks))));
-await writeFile(pdfPath, buffer);
 const size = await stat(pdfPath);
 console.log(`Wrote docs/first-pr-report.pdf (${Math.round(size.size / 1024)} KiB)`);
 
+async function buildHtml() {
+  const images = await Promise.all(
+    [
+      ['Gameplay mobile screenshot', new URL('artifacts/gameplay-mobile.jpg', docsDir)],
+      ['Three-frame share poster', new URL('artifacts/share-poster.jpg', docsDir)],
+      ['Collapse mobile screenshot', new URL('artifacts/collapse-mobile.jpg', docsDir)]
+    ].map(async ([label, url]) => {
+      if (!existsSync(url)) {
+        return '';
+      }
+      const bytes = await readFile(url);
+      return `<figure><img src="data:image/jpeg;base64,${bytes.toString('base64')}" alt="${escapeHtml(label)}" /><figcaption>${escapeHtml(label)}</figcaption></figure>`;
+    })
+  );
+
+  return `<!doctype html>
+<html lang="en-US">
+<head>
+  <meta charset="utf-8" />
+  <title>Event Horizon First PR Report</title>
+  <style>
+    @page { size: Letter; margin: 0.55in 0.5in; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: #15202b;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 11px;
+      line-height: 1.38;
+    }
+    h1, h2, h3 { color: #07111f; line-height: 1.12; margin: 0.55rem 0 0.28rem; }
+    h1 { font-size: 22px; border-bottom: 2px solid #2f7ea1; padding-bottom: 7px; }
+    h2 { font-size: 15px; break-after: avoid; }
+    h3 { font-size: 12px; }
+    p { margin: 0 0 0.42rem; }
+    ul, ol { margin: 0 0 0.5rem 1.1rem; padding: 0; }
+    li { margin: 0.08rem 0; }
+    code { font-family: "SFMono-Regular", Menlo, Consolas, monospace; font-size: 9px; }
+    pre {
+      margin: 0.35rem 0 0.65rem;
+      padding: 8px;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      background: #f3f6f9;
+      border: 1px solid #d9e2ea;
+      border-radius: 5px;
+      font-family: "SFMono-Regular", Menlo, Consolas, monospace;
+      font-size: 7.4px;
+      line-height: 1.25;
+    }
+    a { color: #0b6f9f; text-decoration: none; }
+    .cover {
+      background: #07111f;
+      color: #eef9ff;
+      border-radius: 8px;
+      padding: 18px;
+      margin-bottom: 14px;
+    }
+    .cover h1 { color: #fff; border-color: #80e3ff; margin-top: 0; }
+    .cover p { color: #cbeaf4; margin-bottom: 0; }
+    .section { break-inside: avoid; }
+    .gallery {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin: 8px 0 12px;
+    }
+    figure { margin: 0; break-inside: avoid; }
+    img {
+      display: block;
+      width: 100%;
+      max-height: 290px;
+      object-fit: contain;
+      border: 1px solid #d9e2ea;
+      border-radius: 6px;
+      background: #03040a;
+    }
+    figcaption { margin-top: 4px; color: #526171; font-size: 9px; text-align: center; }
+    .page-break { break-before: page; }
+  </style>
+</head>
+<body>
+  <section class="cover">
+    <h1>Event Horizon First PR Report</h1>
+    <p>Generated from the repository report source, current screenshots, tests, and PR diff.</p>
+  </section>
+  ${markdownToHtml(reportMarkdown)}
+  <section class="page-break">
+    <h2>Screenshots and Poster</h2>
+    <div class="gallery">${images.join('')}</div>
+  </section>
+  <section>
+    <h2>Changed Files From ${escapeHtml(baseRef)}</h2>
+    <pre>${escapeHtml(nameStatus || 'No changed files found.')}</pre>
+  </section>
+  <section>
+    <h2>Diff Stat</h2>
+    <pre>${escapeHtml(diffStat || 'No diff stat available.')}</pre>
+  </section>
+  <section>
+    <h2>Representative Diff Excerpt</h2>
+    <pre>${escapeHtml(diffExcerpt || 'No text diff available.')}</pre>
+  </section>
+</body>
+</html>`;
+}
+
+function markdownToHtml(markdown) {
+  const lines = markdown.split('\n');
+  const html = [];
+  let inCode = false;
+  let codeLines = [];
+  let listOpen = false;
+
+  for (const line of lines) {
+    if (line.startsWith('```')) {
+      if (inCode) {
+        html.push(`<pre>${escapeHtml(codeLines.join('\n'))}</pre>`);
+        codeLines = [];
+      }
+      inCode = !inCode;
+      continue;
+    }
+
+    if (inCode) {
+      codeLines.push(line);
+      continue;
+    }
+
+    if (line.startsWith('- ')) {
+      if (!listOpen) {
+        html.push('<ul>');
+        listOpen = true;
+      }
+      html.push(`<li>${inlineMarkdown(line.slice(2))}</li>`);
+      continue;
+    }
+
+    if (listOpen) {
+      html.push('</ul>');
+      listOpen = false;
+    }
+
+    if (line.startsWith('# ')) {
+      html.push(`<h1>${inlineMarkdown(line.slice(2))}</h1>`);
+    } else if (line.startsWith('## ')) {
+      html.push(`<h2>${inlineMarkdown(line.slice(3))}</h2>`);
+    } else if (line.startsWith('### ')) {
+      html.push(`<h3>${inlineMarkdown(line.slice(4))}</h3>`);
+    } else if (/^\d+\.\s/.test(line)) {
+      html.push(`<p>${inlineMarkdown(line)}</p>`);
+    } else if (line.trim()) {
+      html.push(`<p>${inlineMarkdown(line)}</p>`);
+    }
+  }
+
+  if (listOpen) {
+    html.push('</ul>');
+  }
+  return html.join('\n');
+}
+
+function inlineMarkdown(value) {
+  return escapeHtml(value)
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
 function git(args) {
   try {
-    return execFileSync('git', args, { cwd: repoRoot, encoding: 'utf8', maxBuffer: 1024 * 1024 * 4 });
+    return execFileSync('git', args, {
+      cwd: repoRoot,
+      encoding: 'utf8',
+      maxBuffer: 1024 * 1024 * 12
+    });
   } catch (error) {
     return `git output unavailable: ${error.message}`;
-  }
-}
-
-function page() {
-  doc.addPage();
-  doc.fillColor('#111');
-}
-
-function heading(value) {
-  room(26);
-  doc.moveDown(0.25);
-  doc.font('Helvetica-Bold').fontSize(12).text(value);
-  doc.moveDown(0.15);
-}
-
-function text(value) {
-  room(32);
-  doc.font('Helvetica').fontSize(8).fillColor('#222').text(value, { lineGap: 1.5 });
-}
-
-function bullets(values) {
-  for (const value of values) {
-    text(`- ${value}`);
-  }
-}
-
-function code(value) {
-  for (const line of value.split('\n')) {
-    room(11);
-    doc.font('Courier').fontSize(5.5).fillColor('#222').text(line || ' ', { lineGap: 0 });
-  }
-  doc.moveDown(0.2);
-}
-
-function room(height) {
-  if (doc.y + height > doc.page.height - doc.page.margins.bottom) {
-    page();
-  }
-}
-
-function addPageNumbers() {
-  const range = doc.bufferedPageRange();
-  for (let index = range.start; index < range.start + range.count; index += 1) {
-    doc.switchToPage(index);
-    doc.font('Helvetica').fontSize(7).fillColor('#666').text(`Event Horizon first PR report  •  ${index + 1}`, 34, 756, {
-      align: 'center',
-      width: 544
-    });
   }
 }

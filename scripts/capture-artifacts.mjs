@@ -6,8 +6,8 @@ await mkdir(outputDir, { recursive: true });
 
 const browser = await chromium.launch({ channel: 'chrome' });
 const page = await browser.newPage({
-  viewport: { width: 160, height: 346 },
-  deviceScaleFactor: 1,
+  viewport: { width: 390, height: 844 },
+  deviceScaleFactor: 2,
   isMobile: true,
   hasTouch: true
 });
@@ -18,7 +18,7 @@ await page.waitForTimeout(1300);
 await page.screenshot({
   path: new URL('gameplay-mobile.jpg', outputDir).pathname,
   type: 'jpeg',
-  quality: 24,
+  quality: 62,
   fullPage: false
 });
 
@@ -46,14 +46,14 @@ const posterJpeg = await page.evaluate(async (dataUrl) => {
     candidate.src = dataUrl;
   });
   const canvas = document.createElement('canvas');
-  canvas.width = 160;
-  canvas.height = 284;
+  canvas.width = 540;
+  canvas.height = 960;
   const context = canvas.getContext('2d');
   if (!context) {
     throw new Error('Unable to create poster compression canvas.');
   }
   context.drawImage(image, 0, 0, canvas.width, canvas.height);
-  return canvas.toDataURL('image/jpeg', 0.28);
+  return canvas.toDataURL('image/jpeg', 0.7);
 }, posterDataUrl);
 await writeFile(new URL('share-poster.jpg', outputDir), Buffer.from(posterJpeg.split(',')[1], 'base64'));
 
@@ -62,7 +62,7 @@ await page.waitForTimeout(950);
 await page.screenshot({
   path: new URL('collapse-mobile.jpg', outputDir).pathname,
   type: 'jpeg',
-  quality: 24,
+  quality: 58,
   fullPage: false
 });
 
