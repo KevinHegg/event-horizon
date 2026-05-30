@@ -9,8 +9,11 @@ Event Horizon is a mobile-first cosmic chain-reaction game about delaying a gala
 - Fixed `60 Hz` simulation step decoupled from render frames
 - Seeded `mulberry32` RNG and replay payloads from seed + input timings
 - Default Pulse Chain mode: connect Dark Energy Nodes, press Play, and watch a Stabilizing Pulse travel the network
-- Tap-tap and drag link placement with a visible link budget, undo, clear, and reset
+- Swipe-through-node chain drawing, tap-tap link placement, and tap-based node tuning
+- Interactive `tutorial-001` first-run seed that teaches swipe chain, tap strategy, Play, stabilize taps, and Horizon Lens rescue
 - Energy, Delay, Splitter, Conduit, and Source nodes with scoring and multiplier rules
+- Energy nodes can be primed, Delay nodes cycle timing, and Splitters cycle output priority
+- Pulse-phase taps stabilize arriving nodes for score and dark-energy gain
 - Horizon Lens swipes during pulse playback create short-lived temporary bridges
 - Path-based input recording with mobile Pointer Events and TouchEvent fallback
 - First-run help overlay, tutorial hints, visible pulse/lens feedback, and debug hooks
@@ -39,6 +42,8 @@ npm run test:e2e
 npm run score:test
 npm run capture:iteration-03
 npm run report:iteration-03
+npm run capture:iteration-04
+npm run report:iteration-04
 npm run capture:iteration-02
 npm run report:iteration-02
 npm run report:pdf
@@ -94,11 +99,21 @@ npx netlify dev
   "seed": "tutorial",
   "startedAt": 1780185600000,
   "buildInputs": [
-    { "t": 0, "kind": "link", "fromId": 1, "toId": 2 },
-    { "t": 300, "kind": "link", "fromId": 2, "toId": 3 },
+    {
+      "t": 0,
+      "kind": "chainSwipe",
+      "nodeIds": [1, 2, 3],
+      "path": [
+        { "x": 250, "y": 1388, "t": 0 },
+        { "x": 420, "y": 1165, "t": 90 },
+        { "x": 635, "y": 1010, "t": 180 }
+      ]
+    },
+    { "t": 300, "kind": "nodeTap", "nodeId": 4, "action": "splitter" },
     { "t": 620, "kind": "play" }
   ],
   "liveInputs": [
+    { "t": 2200, "kind": "stabilize", "nodeId": 3, "rating": "stabilized", "success": true },
     {
       "t": 1600,
       "kind": "lens",
@@ -117,6 +132,8 @@ npx netlify dev
     "maxMultiplier": 2,
     "loopsCompleted": 1,
     "linksUsed": 5,
+    "bestChainLength": 5,
+    "energyNodesHit": 2,
     "stabilized": false,
     "collapsed": false
   },
@@ -144,9 +161,9 @@ Legacy mode still uses:
 ## Current Branch Workflow
 
 ```bash
-git switch -c feat/pulse-chain-pivot
+git switch -c feat/iteration-04-playability-tap-swipe-strategy
 git add .
-git commit -m "Pivot Event Horizon to pulse chain gameplay"
-git push -u origin feat/pulse-chain-pivot
-gh pr create --base main --head feat/pulse-chain-pivot --title "Pivot Event Horizon to pulse chain gameplay" --body-file docs/iteration-03-report.md
+git commit -m "Improve Event Horizon playability tutorial and strategy"
+git push -u origin feat/iteration-04-playability-tap-swipe-strategy
+gh pr create --base main --head feat/iteration-04-playability-tap-swipe-strategy --title "Improve Event Horizon playability tutorial and strategy" --body-file docs/iteration-04-report.md
 ```

@@ -94,7 +94,7 @@ a {
 
 #pulse-controls[data-phase="pulse"],
 #pulse-controls[data-phase="ended"] {
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, 1fr);
 }
 
 #restart-button,
@@ -131,6 +131,10 @@ a {
   text-transform: uppercase;
 }
 
+#pulse-controls button:disabled {
+  opacity: 0.45;
+}
+
 #pulse-controls button[hidden] {
   display: none;
 }
@@ -163,9 +167,9 @@ a {
 
 #help-panel {
   width: min(92vw, 440px);
-  max-height: min(88vh, 760px);
+  max-height: min(92vh, 760px);
   overflow: auto;
-  padding: 22px;
+  padding: 18px;
   border: 1px solid rgba(139, 222, 255, 0.34);
   border-radius: 8px;
   background: rgba(7, 12, 25, 0.94);
@@ -174,16 +178,23 @@ a {
 }
 
 #help-panel h1 {
-  margin: 12px 0 8px;
-  font-size: 28px;
+  margin: 10px 0 6px;
+  font-size: 25px;
   letter-spacing: 0;
 }
 
+#help-panel h2 {
+  margin: 10px 0 3px;
+  color: #9ffcff;
+  font-size: 13px;
+  letter-spacing: 0.08em;
+}
+
 #help-panel p {
-  margin: 10px 0;
+  margin: 7px 0;
   color: #cfefff;
-  font-size: 16px;
-  line-height: 1.45;
+  font-size: 14px;
+  line-height: 1.36;
 }
 
 #help-panel ol {
@@ -198,7 +209,8 @@ a {
   margin: 8px 0;
 }
 
-#help-play-button {
+#help-play-button,
+#help-skip-button {
   width: 100%;
   min-height: 52px;
   margin-top: 12px;
@@ -212,10 +224,16 @@ a {
   touch-action: manipulation;
 }
 
+#help-skip-button {
+  border: 1px solid rgba(179, 226, 255, 0.24);
+  background: rgba(7, 12, 25, 0.84);
+  color: #f7fbff;
+}
+
 .help-example {
   position: relative;
-  height: 126px;
-  margin: 2px 0 10px;
+  height: 96px;
+  margin: 2px 0 8px;
   overflow: hidden;
   border-radius: 8px;
   background:

@@ -1,0 +1,122 @@
+COMMAND: npm run build
+
+> event-horizon@0.1.0 build
+> tsc --noEmit && vite build
+
+vite v8.0.14 building client environment for production...
+[2Ktransforming...✓ 724 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                                     3.46 kB │ gzip:  1.18 kB
+dist/assets/index-CVGETPBr.css                      4.50 kB │ gzip:  1.58 kB
+dist/assets/webworkerAll-u0-LKNcn.js                0.06 kB │ gzip:  0.07 kB
+dist/assets/WebGLRenderer-Dr5I3uql.js               0.07 kB │ gzip:  0.07 kB
+dist/assets/CanvasRenderer-C_VE2uLM.js              0.07 kB │ gzip:  0.08 kB
+dist/assets/WebGPURenderer-BqF0A8r4.js              0.07 kB │ gzip:  0.08 kB
+dist/assets/init-nWfKNZF3.js                        0.16 kB │ gzip:  0.16 kB │ map:   0.57 kB
+dist/assets/browserAll-DjO1SdvZ.js                  0.29 kB │ gzip:  0.23 kB │ map:   1.51 kB
+dist/assets/getTextureBatchBindGroup-Dw2p-Wfk.js    0.40 kB │ gzip:  0.31 kB │ map:   1.78 kB
+dist/assets/CanvasPool-9Gf99FtZ.js                  0.80 kB │ gzip:  0.45 kB │ map:   3.50 kB
+dist/assets/canvasUtils-By6x9n4d.js                 6.07 kB │ gzip:  2.07 kB │ map:  21.84 kB
+dist/assets/BufferResource-CHMjz1hG.js             10.57 kB │ gzip:  2.81 kB │ map:  25.57 kB
+dist/assets/WebGPURenderer-CaI5dhXK.js             37.78 kB │ gzip: 10.56 kB │ map: 121.24 kB
+dist/assets/FilterSystem-DKkk6B7X.js               40.30 kB │ gzip: 13.07 kB │ map: 159.86 kB
+dist/assets/FederatedEventTarget-BGQ8UmS3.js       42.56 kB │ gzip: 11.09 kB │ map: 155.08 kB
+dist/assets/WebGLRenderer-4UnqJObN.js              67.75 kB │ gzip: 18.59 kB │ map: 214.44 kB
+dist/assets/RenderTargetSystem-D4_io0eT.js         77.17 kB │ gzip: 22.67 kB │ map: 295.31 kB
+dist/assets/CanvasRenderer-lu0yL7Nx.js             79.94 kB │ gzip: 24.36 kB │ map: 404.18 kB
+dist/assets/Geometry-CiJBQvr3.js                  101.60 kB │ gzip: 31.13 kB │ map: 498.88 kB
+dist/assets/index-DE1jNjA0.js                     127.88 kB │ gzip: 38.76 kB │ map: 515.44 kB
+
+✓ built in 149ms
+
+COMMAND: npm run lint
+
+> event-horizon@0.1.0 lint
+> eslint .
+
+
+COMMAND: npm run test
+
+> event-horizon@0.1.0 test
+> vitest run
+
+
+ RUN  v4.0.15 /Users/kevinhegg/Desktop/event-horizon
+
+ ✓ tests/score-submit.test.ts (3 tests) 13ms
+ ✓ tests/simulation.test.ts (7 tests) 6ms
+ ✓ tests/pulse-simulation.test.ts (12 tests) 14ms
+
+ Test Files  3 passed (3)
+      Tests  22 passed (22)
+   Start at  16:10:49
+   Duration  150ms (transform 115ms, setup 0ms, import 148ms, tests 33ms, environment 0ms)
+
+
+COMMAND: npm run test:e2e
+
+> event-horizon@0.1.0 test:e2e
+> playwright test
+
+
+Running 6 tests using 1 worker
+
+(node:66296) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:66296) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 [mobile-chrome] › tests/e2e/playable.spec.ts:4:1 › first visit opens updated help and tutorial (349ms)
+  ✓  2 [mobile-chrome] › tests/e2e/playable.spec.ts:12:1 › tutorial Step 1 highlights nodes and swipe creates a chain (995ms)
+  ✓  3 [mobile-chrome] › tests/e2e/playable.spec.ts:26:1 › tapping splitter changes tutorial state and output priority (668ms)
+  ✓  4 [mobile-chrome] › tests/e2e/playable.spec.ts:36:1 › pressing Play launches visible pulse and node tap stabilizes it (3.1s)
+  ✓  5 [mobile-chrome] › tests/e2e/playable.spec.ts:53:1 › swiping Horizon Lens creates bridge and replay records grammar (3.4s)
+  ✓  6 [mobile-chrome] › tests/e2e/playable.spec.ts:73:1 › dead-end failure shows suggested fix and FIX CHAIN returns to build (1.4s)
+
+  6 passed (10.6s)
+
+COMMAND: npm run score:test
+
+> event-horizon@0.1.0 score:test
+> node scripts/test-score-submit.mjs
+
+[
+  {
+    "status": 200,
+    "body": {
+      "ok": true,
+      "acceptedAt": "2026-05-30T20:11:00.819Z",
+      "score": 1280,
+      "survivalMs": 67421
+    }
+  },
+  {
+    "status": 200,
+    "body": {
+      "ok": true,
+      "acceptedAt": "2026-05-30T20:11:00.820Z",
+      "score": 620,
+      "survivalMs": 12120
+    }
+  }
+]
+
+COMMAND: npm run capture:iteration-04
+
+> event-horizon@0.1.0 capture:iteration-04
+> node scripts/capture-iteration-04-artifacts.mjs
+
+Captured docs/artifacts/iteration-04-help-mobile.jpg
+Captured docs/artifacts/iteration-04-tutorial-swipe-chain-mobile.jpg
+Captured docs/artifacts/iteration-04-node-tap-strategy-mobile.jpg
+Captured docs/artifacts/iteration-04-pulse-running-mobile.jpg
+Captured docs/artifacts/iteration-04-horizon-lens-mobile.jpg
+Captured docs/artifacts/iteration-04-dead-end-fix-mobile.jpg
+Captured docs/artifacts/iteration-04-end-screen-mobile.jpg
+
+COMMAND: npm run report:iteration-04
+
+> event-horizon@0.1.0 report:iteration-04
+> node scripts/generate-iteration-04-report.mjs
+
+Report generated after this log was written.

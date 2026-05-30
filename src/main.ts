@@ -1,7 +1,6 @@
 import './styles.css';
 import { EventHorizonGame } from './game/EventHorizonGame';
 import { PulseMode } from './game/pulse/PulseMode';
-import { getDailyPulseSeed } from './game/pulse/PulseLevelGenerator';
 
 interface EventHorizonRuntime {
   start: () => Promise<void>;
@@ -21,6 +20,7 @@ const shareButton = document.querySelector<HTMLButtonElement>('#share-button');
 const helpButton = document.querySelector<HTMLButtonElement>('#help-button');
 const helpOverlay = document.querySelector<HTMLElement>('#help-overlay');
 const helpPlayButton = document.querySelector<HTMLButtonElement>('#help-play-button');
+const helpSkipButton = document.querySelector<HTMLButtonElement>('#help-skip-button');
 const posterLink = document.querySelector<HTMLAnchorElement>('#poster-link');
 const pulseControls = document.querySelector<HTMLElement>('#pulse-controls');
 const pulseUndoButton = document.querySelector<HTMLButtonElement>('#pulse-undo-button');
@@ -34,6 +34,7 @@ if (
   !helpButton ||
   !helpOverlay ||
   !helpPlayButton ||
+  !helpSkipButton ||
   !posterLink ||
   !pulseControls ||
   !pulseUndoButton ||
@@ -46,7 +47,7 @@ if (
 const params = new URLSearchParams(window.location.search);
 const mode = params.get('mode') === 'legacy' ? 'legacy' : 'pulse-chain';
 const debugInput = params.get('debugInput') === '1';
-const seed = params.get('seed') ?? getDailyPulseSeed();
+const seed = params.get('seed') ?? 'tutorial-001';
 
 const game: EventHorizonRuntime =
   mode === 'legacy'
@@ -64,7 +65,7 @@ game.setInputDebug(debugInput);
 pulseControls.hidden = mode === 'legacy';
 let pulsePaused = false;
 
-const helpKey = mode === 'legacy' ? 'eventHorizon.helpSeen' : 'eventHorizon.pulseHelpSeen';
+const helpKey = mode === 'legacy' ? 'eventHorizon.helpSeen' : 'eventHorizon.iteration04HelpSeen';
 
 const hasSeenHelp = (): boolean => {
   try {
@@ -84,14 +85,23 @@ const markHelpSeen = (): void => {
 
 const openHelp = (): void => {
   helpOverlay.hidden = false;
-  helpPlayButton.textContent = 'PLAY';
+  helpPlayButton.textContent = mode === 'legacy' ? 'PLAY' : 'START TUTORIAL';
+  helpSkipButton.hidden = mode === 'legacy';
   game.setPaused(true);
 };
 
-const closeHelp = (): void => {
+const closeHelp = (startTutorial: boolean): void => {
   helpOverlay.hidden = true;
   markHelpSeen();
+  if (game instanceof PulseMode) {
+    if (startTutorial) {
+      game.startTutorial();
+    } else {
+      game.skipTutorial();
+    }
+  }
   game.setPaused(false);
+  updatePulseControls();
 };
 
 if (!hasSeenHelp()) {
@@ -106,7 +116,8 @@ restartButton.addEventListener('click', () => {
 });
 
 helpButton.addEventListener('click', openHelp);
-helpPlayButton.addEventListener('click', closeHelp);
+helpPlayButton.addEventListener('click', () => closeHelp(true));
+helpSkipButton.addEventListener('click', () => closeHelp(false));
 
 shareButton.addEventListener('click', async () => {
   const poster = await game.exportPoster();
@@ -121,6 +132,9 @@ if (game instanceof PulseMode) {
     } else if (snapshot.phase === 'pulse') {
       pulsePaused = !pulsePaused;
       game.setPaused(pulsePaused);
+    } else if (snapshot.endReason === 'pulse-died') {
+      pulsePaused = false;
+      game.fixChain();
     } else {
       pulsePaused = false;
       game.restart();
@@ -142,6 +156,9 @@ if (game instanceof PulseMode) {
       game.playPulse();
       pulsePaused = false;
       updatePulseControls();
+    } else if (game.getSnapshot().phase === 'ended') {
+      const nextSeed = `seed-${Date.now().toString(36)}`;
+      window.location.href = `${window.location.pathname}?seed=${encodeURIComponent(nextSeed)}`;
     }
   });
   window.setInterval(updatePulseControls, 250);
@@ -184,10 +201,11 @@ function updatePulseControls(): void {
   }
   undoButton.hidden = false;
   clearButton.hidden = false;
-  playButton.hidden = true;
-  undoButton.textContent = 'Replay';
-  clearButton.textContent = 'Restart';
-  playButton.disabled = true;
+  playButton.hidden = false;
+  undoButton.textContent = snapshot.endReason === 'pulse-died' ? 'Fix Chain' : 'Replay';
+  clearButton.textContent = 'Replay';
+  playButton.textContent = 'New Seed';
+  playButton.disabled = false;
 }
 
 declare global {
@@ -214,6 +232,15 @@ declare global {
       getReplayPayload: () => unknown;
       getSnapshot: () => unknown;
       playPulse: () => unknown;
+      startTutorial: () => void;
+      skipTutorial: () => void;
+      getTutorialStep: () => unknown;
+      simulateChainSwipe: (nodeIds: number[]) => unknown;
+      analyzeChain: () => unknown;
+      getSuggestedFixes: () => unknown;
+      primeNode: (id: number) => unknown;
+      cycleNode: (id: number) => unknown;
+      stabilizeNode: (id: number) => unknown;
       setInputDebug: (enabled: boolean) => void;
       simulateLens: (points: { x: number; y: number }[]) => unknown;
     };
@@ -239,7 +266,7 @@ window.__EVENT_HORIZON_DEBUG__ =
           if (open) {
             openHelp();
           } else {
-            closeHelp();
+            closeHelp(false);
           }
         },
         forcePulsePhase: () => game.forcePulsePhase(),
@@ -251,6 +278,15 @@ window.__EVENT_HORIZON_DEBUG__ =
         getReplayPayload: () => game.getReplayPayload(),
         getSnapshot: () => game.getSnapshot(),
         playPulse: () => game.playPulse(),
+        startTutorial: () => game.startTutorial(),
+        skipTutorial: () => game.skipTutorial(),
+        getTutorialStep: () => game.getTutorialStep(),
+        simulateChainSwipe: (nodeIds) => game.simulateChainSwipe(nodeIds),
+        analyzeChain: () => game.analyzeChain(),
+        getSuggestedFixes: () => game.getSuggestedFixes(),
+        primeNode: (id) => game.primeNode(id),
+        cycleNode: (id) => game.cycleNode(id),
+        stabilizeNode: (id) => game.stabilizeNode(id),
         setInputDebug: (enabled) => game.setInputDebug(enabled),
         simulateLens: (points) => game.simulateLens(points)
       }
@@ -263,7 +299,7 @@ window.__EVENT_HORIZON_DEBUG__ =
           if (open) {
             openHelp();
           } else {
-            closeHelp();
+            closeHelp(false);
           }
         },
         forcePulsePhase: () => undefined,
@@ -275,6 +311,15 @@ window.__EVENT_HORIZON_DEBUG__ =
         getReplayPayload: () => game.getReplayPayload(),
         getSnapshot: () => game.getSnapshot(),
         playPulse: () => undefined,
+        startTutorial: () => undefined,
+        skipTutorial: () => undefined,
+        getTutorialStep: () => undefined,
+        simulateChainSwipe: () => undefined,
+        analyzeChain: () => undefined,
+        getSuggestedFixes: () => [],
+        primeNode: () => undefined,
+        cycleNode: () => undefined,
+        stabilizeNode: () => undefined,
         setInputDebug: (enabled) => game.setInputDebug(enabled),
         simulateLens: () => undefined
       };

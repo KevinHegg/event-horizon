@@ -11,7 +11,7 @@ export function getDailyPulseSeed(date = new Date()): string {
 
 export function generatePulseLevel(seed: string): PulseLevel {
   const rng = createSeededRandom(`pulse-chain-${seed}`);
-  const firstSeed = seed === 'daily-2026-05-30' || seed === 'tutorial' || seed === 'eh-pulse-alpha';
+  const firstSeed = seed === 'tutorial-001' || seed === 'daily-2026-05-30' || seed === 'tutorial' || seed === 'eh-pulse-alpha';
   const baseNodes = firstSeed ? tutorialNodes() : generatedNodes(rng);
   return {
     seed,
@@ -25,17 +25,17 @@ export function generatePulseLevel(seed: string): PulseLevel {
 
 function tutorialNodes(): PulseNode[] {
   const specs: Array<[PulseNodeType, number, number, number, string]> = [
-    ['source', 255, 1388, 0, 'SOURCE'],
-    ['energy', 420, 1165, 1, 'ENERGY'],
-    ['delay', 640, 1015, 1, 'DELAY'],
-    ['splitter', 780, 760, 2, 'SPLIT'],
-    ['energy', 525, 610, 2, 'ENERGY'],
-    ['energy', 835, 1215, 2, 'ENERGY'],
-    ['conduit', 310, 810, 2, 'CONDUIT'],
-    ['conduit', 700, 1410, 2, 'CONDUIT'],
-    ['delay', 250, 1080, 1, 'DELAY'],
+    ['source', 250, 1388, 0, 'SOURCE'],
+    ['energy', 420, 1165, 1, '+100'],
+    ['delay', 635, 1010, 1, 'DELAY'],
+    ['splitter', 770, 775, 2, 'SPLIT'],
+    ['energy', 515, 620, 2, '+100'],
+    ['energy', 835, 1215, 2, '+100'],
+    ['conduit', 305, 805, 2, 'CONDUIT'],
+    ['conduit', 705, 1412, 2, 'CONDUIT'],
+    ['delay', 252, 1085, 1, 'DELAY'],
     ['splitter', 910, 935, 2, 'SPLIT'],
-    ['energy', 485, 1515, 2, 'ENERGY'],
+    ['energy', 485, 1515, 2, '+100'],
     ['conduit', 805, 545, 2, 'CONDUIT']
   ];
   return specs.map(([type, x, y, ring, label], index) => makeNode(index + 1, type, x, y, ring, label));
@@ -109,7 +109,11 @@ function makeNode(id: number, type: PulseNodeType, x: number, y: number, ring: n
     label,
     radius: type === 'source' ? 54 : type === 'splitter' ? 50 : 46,
     activationMs: 0,
-    scoreCooldownMs: 0
+    scoreCooldownMs: 0,
+    primed: false,
+    delayLevel: 1,
+    splitterPriority: 0,
+    stabilizedMs: 0
   };
 }
 

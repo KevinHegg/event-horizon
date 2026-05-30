@@ -131,6 +131,13 @@ export class PulseMode {
     return this.sim.clearLinks();
   }
 
+  fixChain() {
+    this.scoreSubmitted = false;
+    this.input?.clearSelection();
+    this.loop.resetClock();
+    return this.sim.fixChain();
+  }
+
   undo() {
     return this.sim.undo();
   }
@@ -141,6 +148,51 @@ export class PulseMode {
 
   simulateLens(points: readonly WorldPoint[]) {
     return this.sim.applyLens(points.map((point, index) => ({ ...point, t: index * 16 })));
+  }
+
+  simulateChainSwipe(nodeIds: readonly number[]) {
+    const points: Array<WorldPoint & { t: number }> = [];
+    for (const id of nodeIds) {
+      const node = this.sim.getNodes().find((candidate) => candidate.id === id);
+      if (node) {
+        points.push({ x: node.x, y: node.y, t: points.length * 80 });
+      }
+    }
+    return this.sim.applyChainSwipe(points);
+  }
+
+  startTutorial(): void {
+    this.sim.startTutorial();
+    this.scoreSubmitted = false;
+    this.loop.resetClock();
+  }
+
+  skipTutorial(): void {
+    this.sim.skipTutorial();
+  }
+
+  getTutorialStep() {
+    return this.sim.getTutorialStep();
+  }
+
+  analyzeChain() {
+    return this.sim.analyzeChain();
+  }
+
+  getSuggestedFixes() {
+    return this.sim.getSuggestedFixes();
+  }
+
+  primeNode(id: number) {
+    return this.sim.primeNode(id);
+  }
+
+  cycleNode(id: number) {
+    return this.sim.cycleNode(id);
+  }
+
+  stabilizeNode(id: number) {
+    return this.sim.stabilizeNode(id);
   }
 
   forceBuildPhase(): void {

@@ -17,14 +17,24 @@ const replay = {
 const pulseReplay = {
   version: 1,
   mode: 'pulse-chain',
-  seed: 'tutorial',
+  seed: 'tutorial-001',
   startedAt: 1780185600000,
   buildInputs: [
-    { t: 0, kind: 'link', fromId: 1, toId: 2 },
-    { t: 220, kind: 'link', fromId: 2, toId: 3 },
+    {
+      t: 0,
+      kind: 'chainSwipe',
+      nodeIds: [1, 2, 3],
+      path: [
+        { x: 250, y: 1388, t: 0 },
+        { x: 420, y: 1165, t: 90 },
+        { x: 635, y: 1010, t: 180 }
+      ]
+    },
+    { t: 220, kind: 'nodeTap', nodeId: 4, action: 'splitter' },
     { t: 520, kind: 'play' }
   ],
   liveInputs: [
+    { t: 2200, kind: 'stabilize', nodeId: 3, rating: 'stabilized', success: true },
     {
       t: 1420,
       kind: 'lens',
@@ -43,6 +53,8 @@ const pulseReplay = {
     maxMultiplier: 2,
     loopsCompleted: 1,
     linksUsed: 5,
+    bestChainLength: 5,
+    energyNodesHit: 2,
     stabilized: false,
     collapsed: false
   },

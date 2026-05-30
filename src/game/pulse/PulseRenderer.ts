@@ -22,6 +22,7 @@ export class PulseRenderer {
   private readonly lensLayer = new Graphics();
   private readonly previewLayer = new Graphics();
   private readonly nodeLayer = new Graphics();
+  private readonly nodeTextLayer = new Container();
   private readonly pulseLayer = new Graphics();
   private readonly blackHole = new Graphics();
   private readonly hud = new Container();
@@ -44,6 +45,28 @@ export class PulseRenderer {
       stroke: { color: '#180923', width: 5 }
     })
   });
+  private readonly messageText = new Text({
+    text: '',
+    style: new TextStyle({
+      align: 'center',
+      fill: '#9ffcff',
+      fontFamily: 'Inter, system-ui, sans-serif',
+      fontSize: 26,
+      fontWeight: '900',
+      stroke: { color: '#061120', width: 4 }
+    })
+  });
+  private readonly strategyText = new Text({
+    text: '',
+    style: new TextStyle({
+      fill: '#f7fbff',
+      fontFamily: 'Inter, system-ui, sans-serif',
+      fontSize: 18,
+      fontWeight: '800',
+      lineHeight: 23,
+      stroke: { color: '#061120', width: 4 }
+    })
+  });
   private readonly meter = new Graphics();
   private readonly debugText = new Text({
     text: '',
@@ -55,11 +78,12 @@ export class PulseRenderer {
       align: 'center',
       fill: '#ffffff',
       fontFamily: 'Inter, system-ui, sans-serif',
-      fontSize: 48,
+      fontSize: 40,
       fontWeight: '900',
       stroke: { color: '#12051c', width: 6 }
     })
   });
+  private readonly nodeTexts = new Map<number, Text>();
 
   constructor(private readonly stage: Container) {
     this.stage.addChild(this.world);
@@ -71,16 +95,20 @@ export class PulseRenderer {
       this.lensLayer,
       this.previewLayer,
       this.nodeLayer,
+      this.nodeTextLayer,
       this.pulseLayer,
       this.hintText,
       this.hud
     );
-    this.hud.addChild(this.meter, this.scoreText, this.metaText, this.debugText, this.endText);
+    this.hud.addChild(this.meter, this.scoreText, this.metaText, this.strategyText, this.messageText, this.debugText, this.endText);
     this.hintText.anchor.set(0.5);
     this.hintText.position.set(WORLD_WIDTH / 2, 260);
+    this.messageText.anchor.set(0.5);
+    this.messageText.position.set(WORLD_WIDTH / 2, 318);
     this.scoreText.position.set(68, 68);
     this.metaText.position.set(72, 130);
-    this.debugText.position.set(72, 178);
+    this.strategyText.position.set(68, 330);
+    this.debugText.position.set(72, 520);
     this.endText.anchor.set(0.5);
     this.endText.position.set(WORLD_WIDTH / 2, WORLD_HEIGHT * 0.52);
     this.drawBackground();
@@ -137,11 +165,12 @@ export class PulseRenderer {
       }
       const layer = link.temporary ? this.tempLinkLayer : this.linkLayer;
       const alpha = link.temporary ? clamp(1 - link.ageMs / link.expiresMs, 0, 1) : 1;
+      const flash = clamp(link.flashMs / 520, 0, 1);
       this.drawCurve(layer, curvedLinkPath(from, to, link.temporary ? -0.16 : 0.12), {
         glowColor: link.temporary ? 0xd267ff : 0x4dccff,
         coreColor: link.temporary ? 0xffffff : 0x9fe7ff,
         alpha,
-        width: link.temporary ? 9 : 6
+        width: link.temporary ? 9 + flash * 5 : 6 + flash * 4
       });
       this.drawFlowDots(layer, from, to, snapshot.timeMs, link.temporary, alpha);
     }
@@ -180,6 +209,17 @@ export class PulseRenderer {
 
   private renderPreview(snapshot: PulseSnapshot, input: PulseInputViewState): void {
     this.previewLayer.clear();
+    if (snapshot.tutorialGhostPath.length > 1) {
+      this.drawCurve(this.previewLayer, resamplePath(snapshot.tutorialGhostPath, 34), {
+        glowColor: 0xd267ff,
+        coreColor: 0xffffff,
+        alpha: 0.62 + Math.sin(snapshot.timeMs * 0.006) * 0.18,
+        width: 6
+      });
+      const ghost = pointAlongPolyline(snapshot.tutorialGhostPath, (snapshot.timeMs * 0.00032) % 1);
+      this.previewLayer.circle(ghost.x, ghost.y, 18).fill({ color: 0xffffff, alpha: 0.74 });
+      this.previewLayer.circle(ghost.x, ghost.y, 34).stroke({ color: 0xd267ff, alpha: 0.48, width: 5 });
+    }
     if (snapshot.phase === 'build' && input.previewFromId && input.previewPoint) {
       const from = findNode(snapshot.nodes, input.previewFromId);
       if (from) {
@@ -190,6 +230,14 @@ export class PulseRenderer {
           width: 5
         });
       }
+    }
+    if (snapshot.phase === 'build' && input.liveGesture.length > 1) {
+      this.drawCurve(this.previewLayer, resamplePath(input.liveGesture, 36), {
+        glowColor: 0xd267ff,
+        coreColor: 0xffffff,
+        alpha: 0.82,
+        width: 7
+      });
     }
     if (snapshot.phase === 'pulse' && input.liveGesture.length > 1) {
       this.drawCurve(this.previewLayer, resamplePath(input.liveGesture, 36), {
@@ -203,22 +251,53 @@ export class PulseRenderer {
 
   private renderNodes(snapshot: PulseSnapshot, input: PulseInputViewState): void {
     this.nodeLayer.clear();
+    const visibleNodeIds = new Set<number>();
     for (const node of snapshot.nodes) {
       const selected = input.selectedNodeId === node.id;
       const nearest = input.nearestNodeId === node.id;
       const active = node.activationMs > 0;
+      const highlighted =
+        snapshot.tutorialHighlightNodeIds.includes(node.id) ||
+        snapshot.deadEndNodeId === node.id ||
+        snapshot.suggestedFixes.some((fix) => fix.fromId === node.id || fix.toId === node.id);
       const color = NODE_COLORS[node.type];
-      const halo = selected || nearest || active ? 0.56 : node.type === 'energy' || node.type === 'source' ? 0.34 : 0.22;
-      this.nodeLayer.circle(node.x, node.y, node.radius + 26 + (active ? 18 : 0)).fill({ color, alpha: halo * 0.23 });
-      this.nodeLayer.circle(node.x, node.y, node.radius + 12).stroke({ color, alpha: halo, width: selected ? 7 : 4 });
+      const halo = selected || nearest || active || highlighted ? 0.68 : node.type === 'energy' || node.type === 'source' ? 0.34 : 0.22;
+      this.nodeLayer.circle(node.x, node.y, node.radius + 30 + (active || highlighted ? 20 : 0)).fill({ color, alpha: halo * 0.23 });
+      if (node.primed) {
+        this.nodeLayer.circle(node.x, node.y, node.radius + 26).stroke({ color: 0xffffff, alpha: 0.84, width: 6 });
+      }
+      if (node.stabilizedMs > 0) {
+        this.nodeLayer.circle(node.x, node.y, node.radius + 38).stroke({ color: 0x4dffbf, alpha: 0.76, width: 8 });
+      }
+      this.nodeLayer.circle(node.x, node.y, node.radius + 12).stroke({ color: highlighted ? 0xffffff : color, alpha: halo, width: selected || highlighted ? 7 : 4 });
       if (node.type === 'splitter') {
-        this.nodeLayer.regularPoly(node.x, node.y, node.radius, 3, -Math.PI / 2).fill({ color, alpha: 0.86 });
+        this.nodeLayer.regularPoly(node.x, node.y, node.radius, 3, -Math.PI / 2 + node.splitterPriority * 0.7).fill({ color, alpha: 0.86 });
       } else if (node.type === 'delay') {
         this.nodeLayer.roundRect(node.x - node.radius * 0.74, node.y - node.radius * 0.74, node.radius * 1.48, node.radius * 1.48, 12).fill({ color, alpha: 0.88 });
+        for (let tick = 0; tick <= node.delayLevel; tick += 1) {
+          this.nodeLayer.roundRect(node.x - 22 + tick * 22, node.y + node.radius + 16, 13, 7, 3).fill({ color: 0xffffff, alpha: 0.78 });
+        }
       } else {
         this.nodeLayer.circle(node.x, node.y, node.radius).fill({ color, alpha: 0.88 });
       }
       this.nodeLayer.circle(node.x, node.y, node.radius * 0.45).fill({ color: 0xffffff, alpha: active ? 0.82 : 0.36 });
+      const text = this.nodeText(node.id);
+      text.text = iconForNode(node);
+      text.position.set(node.x, node.y - 2);
+      text.visible = true;
+      visibleNodeIds.add(node.id);
+      if (snapshot.tutorialActive && highlighted) {
+        const label = this.nodeText(node.id + 1000);
+        label.text = node.type === 'energy' ? 'ENERGY' : node.label;
+        label.position.set(node.x, node.y + node.radius + 46);
+        label.visible = true;
+        visibleNodeIds.add(node.id + 1000);
+      }
+    }
+    for (const [id, text] of this.nodeTexts) {
+      if (!visibleNodeIds.has(id)) {
+        text.visible = false;
+      }
     }
   }
 
@@ -238,8 +317,21 @@ export class PulseRenderer {
   private renderHud(snapshot: PulseSnapshot, input: PulseInputViewState, debug: boolean): void {
     this.scoreText.text = String(snapshot.score);
     this.metaText.text = `x${snapshot.multiplier}  LINKS ${snapshot.linksUsed}/${snapshot.linkBudget}  LENS ${snapshot.lensCharges}/2  BEST ${Math.max(snapshot.score, Number(localStorage.getItem('eventHorizon.bestScore') ?? 0))}`;
+    this.strategyText.visible = snapshot.phase === 'build';
+    this.strategyText.text = [
+      'BUILD A CHAIN',
+      'Hit Energy nodes.',
+      'Use Delay nodes.',
+      'Avoid dead ends.',
+      `Energy ${snapshot.chainAnalysis.reachableEnergyNodes}/${snapshot.chainAnalysis.totalEnergyNodes}`,
+      `Dead ends ${snapshot.chainAnalysis.deadEndNodeIds.length}`,
+      `Loop ${snapshot.chainAnalysis.hasLoop ? 'Yes' : 'No'}`,
+      snapshot.chainAnalysis.quality
+    ].join('\n');
     this.hintText.text = snapshot.tutorialHint;
     this.hintText.visible = snapshot.phase !== 'ended';
+    this.messageText.text = snapshot.lastInputResult.message;
+    this.messageText.visible = snapshot.phase !== 'ended' && snapshot.lastInputResult.message !== snapshot.tutorialHint;
     this.meter.clear();
     const meterWidth = WORLD_WIDTH - 156;
     const fill = meterWidth * clamp(snapshot.darkEnergy / MAX_ENERGY, 0, 1);
@@ -249,15 +341,23 @@ export class PulseRenderer {
     this.meter.roundRect(86, WORLD_HEIGHT - 172, 220, 28, 4).fill({ color: 0x03040a, alpha: 0.46 });
     this.meter.roundRect(0, 0, 0, 0, 0);
     this.endText.visible = snapshot.phase === 'ended';
-    this.endText.text = snapshot.phase === 'ended'
-      ? `${snapshot.stabilized ? 'SECTOR STABILIZED' : 'GALAXY COLLAPSED'}\n${snapshot.score}  •  ${formatTime(snapshot.timeMs)}\nSEED ${snapshot.seed}`
-      : '';
+    if (snapshot.phase === 'ended') {
+      const fix = snapshot.suggestedFixes[0];
+      this.endText.text = snapshot.endReason === 'pulse-died'
+        ? `PULSE LOST\nDead end at: ${nodeLabel(snapshot, snapshot.deadEndNodeId)}\n${fix ? `Try linking this node\nto ${nodeLabel(snapshot, fix.toId)}.` : 'Try adding one more outgoing link.'}`
+        : `${snapshot.stabilized ? 'SECTOR STABILIZED' : 'GALAXY COLLAPSED'}\n${snapshot.score}  •  ${formatTime(snapshot.timeMs)}\nEnergy nodes hit ${snapshot.chainAnalysis.reachableEnergyNodes}/${snapshot.chainAnalysis.totalEnergyNodes}\nSEED ${snapshot.seed}`;
+    } else {
+      this.endText.text = '';
+    }
     this.debugText.visible = debug;
     if (debug) {
       this.debugText.text = [
         `phase: ${snapshot.phase}`,
+        `tutorial: ${snapshot.tutorialStep}`,
         `selected: ${input.selectedNodeId ?? '--'} nearest: ${input.nearestNodeId ?? '--'}`,
         `links: ${snapshot.linksUsed}/${snapshot.linkBudget} pulses: ${snapshot.pulses.length}`,
+        `chain: ${snapshot.lastChainNodeIds.join('>') || '--'}`,
+        `analysis: ${snapshot.chainAnalysis.quality}`,
         `last: ${snapshot.lastInputResult.message}`,
         `hash: ${snapshot.stepHash}`
       ].join('\n');
@@ -276,6 +376,27 @@ export class PulseRenderer {
     graphics.stroke({ color: options.glowColor, alpha: options.alpha * 0.28, width: options.width * 3.4 });
     drawSmooth(graphics, points);
     graphics.stroke({ color: options.coreColor, alpha: options.alpha, width: options.width });
+  }
+
+  private nodeText(id: number): Text {
+    let text = this.nodeTexts.get(id);
+    if (!text) {
+      text = new Text({
+        text: '',
+        style: new TextStyle({
+          align: 'center',
+          fill: '#061120',
+          fontFamily: 'Inter, system-ui, sans-serif',
+          fontSize: id >= 1000 ? 18 : 26,
+          fontWeight: '900',
+          stroke: { color: '#ffffff', width: id >= 1000 ? 2 : 3 }
+        })
+      });
+      text.anchor.set(0.5);
+      this.nodeTextLayer.addChild(text);
+      this.nodeTexts.set(id, text);
+    }
+    return text;
   }
 
   private drawFlowDots(
@@ -324,4 +445,58 @@ function pulsePoint(snapshot: PulseSnapshot, fromId: number, toId: number | unde
   }
   const path = curvedLinkPath(from, to, 0.12);
   return pointOnQuadratic(path[0], path[1], path[2], progress);
+}
+
+function iconForNode(node: PulseNode): string {
+  if (node.type === 'source') {
+    return 'S';
+  }
+  if (node.type === 'energy') {
+    return '+';
+  }
+  if (node.type === 'delay') {
+    return 'II';
+  }
+  if (node.type === 'splitter') {
+    return 'Y';
+  }
+  return 'o';
+}
+
+function pointAlongPolyline(points: readonly WorldPoint[], t: number): WorldPoint {
+  if (points.length === 0) {
+    return { x: 0, y: 0 };
+  }
+  if (points.length === 1) {
+    return points[0];
+  }
+  const lengths: number[] = [];
+  let total = 0;
+  for (let index = 1; index < points.length; index += 1) {
+    const length = Math.hypot(points[index].x - points[index - 1].x, points[index].y - points[index - 1].y);
+    lengths.push(length);
+    total += length;
+  }
+  let target = clamp(t, 0, 1) * total;
+  for (let index = 1; index < points.length; index += 1) {
+    const length = lengths[index - 1];
+    if (target <= length) {
+      const local = length <= 0 ? 0 : target / length;
+      return {
+        x: points[index - 1].x + (points[index].x - points[index - 1].x) * local,
+        y: points[index - 1].y + (points[index].y - points[index - 1].y) * local
+      };
+    }
+    target -= length;
+  }
+  return points[points.length - 1];
+}
+
+function nodeLabel(snapshot: PulseSnapshot, nodeId: number | undefined): string {
+  const node = nodeId === undefined ? undefined : findNode(snapshot.nodes, nodeId);
+  if (!node) {
+    return 'UNKNOWN NODE';
+  }
+  const label = node.type === 'energy' ? 'ENERGY' : node.label;
+  return `${label} ${node.id}`;
 }

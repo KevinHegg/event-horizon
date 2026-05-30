@@ -14,9 +14,11 @@
     "capture:artifacts": "node scripts/capture-artifacts.mjs",
     "capture:iteration-02": "node scripts/capture-iteration-02-artifacts.mjs",
     "capture:iteration-03": "node scripts/capture-iteration-03-artifacts.mjs",
+    "capture:iteration-04": "node scripts/capture-iteration-04-artifacts.mjs",
     "report:pdf": "node scripts/generate-report-pdf.mjs",
     "report:iteration-02": "node scripts/generate-iteration-02-report.mjs",
-    "report:iteration-03": "node scripts/generate-iteration-03-report.mjs"
+    "report:iteration-03": "node scripts/generate-iteration-03-report.mjs",
+    "report:iteration-04": "node scripts/generate-iteration-04-report.mjs"
   },
   "dependencies": {
     "pixi.js": "8.18.1"

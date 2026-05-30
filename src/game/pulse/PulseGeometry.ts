@@ -116,6 +116,28 @@ export function pathCrossesNodeRadius(path: readonly WorldPoint[], node: PulseNo
   return distanceNodeToPath(node, path) <= radius;
 }
 
+export function nodesCrossedByPath(
+  nodes: readonly PulseNode[],
+  path: readonly WorldPoint[],
+  radius = 76
+): PulseNode[] {
+  const crossed = nodes
+    .map((node) => {
+      const hit = firstPathHit(node, path, radius + node.radius * 0.35);
+      return hit === undefined ? undefined : { node, order: hit };
+    })
+    .filter((entry): entry is { node: PulseNode; order: number } => entry !== undefined)
+    .sort((a, b) => a.order - b.order)
+    .map((entry) => entry.node);
+  const result: PulseNode[] = [];
+  for (const node of crossed) {
+    if (result[result.length - 1]?.id !== node.id) {
+      result.push(node);
+    }
+  }
+  return result;
+}
+
 export function distanceNodeToPath(node: PulseNode, path: readonly WorldPoint[]): number {
   if (path.length === 0) {
     return Number.POSITIVE_INFINITY;
@@ -130,6 +152,37 @@ export function distanceNodeToPath(node: PulseNode, path: readonly WorldPoint[])
     best = Math.min(best, distancePointToSegment(node, previous, point));
   }
   return best;
+}
+
+function firstPathHit(node: PulseNode, path: readonly WorldPoint[], radius: number): number | undefined {
+  if (path.length === 0) {
+    return undefined;
+  }
+  let traveled = 0;
+  if (path.length === 1) {
+    return Math.sqrt(distanceSquared(node.x, node.y, path[0].x, path[0].y)) <= radius ? 0 : undefined;
+  }
+  for (let index = 1; index < path.length; index += 1) {
+    const previous = path[index - 1];
+    const point = path[index];
+    const segmentLength = Math.max(0.001, Math.hypot(point.x - previous.x, point.y - previous.y));
+    const distance = distancePointToSegment(node, previous, point);
+    if (distance <= radius) {
+      return traveled + segmentLength * projectionT(node, previous, point);
+    }
+    traveled += segmentLength;
+  }
+  return undefined;
+}
+
+function projectionT(point: WorldPoint, start: WorldPoint, end: WorldPoint): number {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const lengthSq = dx * dx + dy * dy;
+  if (lengthSq <= 0.000001) {
+    return 0;
+  }
+  return clamp(((point.x - start.x) * dx + (point.y - start.y) * dy) / lengthSq, 0, 1);
 }
 
 export function curvedLinkPath(from: WorldPoint, to: WorldPoint, bend = 0.12): WorldPoint[] {

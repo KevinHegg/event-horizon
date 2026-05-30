@@ -75,12 +75,21 @@ export class PulseInputController {
   private handleTap(point: GesturePoint): void {
     const snapshot = this.sim.getSnapshot();
     if (snapshot.phase !== 'build') {
+      const pulseNode = this.nearestNode(point, 86);
+      if (snapshot.phase === 'pulse' && pulseNode) {
+        this.lastResult = this.sim.stabilizeNode(pulseNode.id);
+      }
       return;
     }
     const node = this.nearestNode(point, 76);
     if (!node) {
       this.clearSelection();
-      this.lastResult = { ok: false, kind: 'invalid', message: 'NO NODE' };
+      this.lastResult = this.sim.removeLinkNear(point);
+      return;
+    }
+    if (snapshot.tutorialStep === 'tap-splitter' && node.type === 'splitter') {
+      this.lastResult = this.sim.tapNode(node.id);
+      this.selectedNodeId = undefined;
       return;
     }
     if (this.selectedNodeId === undefined) {
@@ -89,7 +98,10 @@ export class PulseInputController {
       return;
     }
     if (this.selectedNodeId === node.id) {
-      this.clearSelection();
+      this.lastResult = this.sim.tapNode(node.id);
+      this.selectedNodeId = undefined;
+      this.previewFromId = undefined;
+      this.previewPoint = undefined;
       return;
     }
     this.lastResult = this.sim.addLink(this.selectedNodeId, node.id);
@@ -99,13 +111,7 @@ export class PulseInputController {
   private handleSwipe(gesture: SwipeGesture): void {
     const snapshot = this.sim.getSnapshot();
     if (snapshot.phase === 'build') {
-      const startNode = this.nearestNode(gesture.start, 88);
-      const endNode = this.nearestNode(gesture.end, 94);
-      if (startNode && endNode) {
-        this.lastResult = this.sim.addLink(startNode.id, endNode.id);
-      } else {
-        this.lastResult = { ok: false, kind: 'invalid', message: 'DRAG NODE TO NODE' };
-      }
+      this.lastResult = this.sim.applyChainSwipe(gesture.points);
       this.selectedNodeId = undefined;
     } else if (snapshot.phase === 'pulse') {
       this.lastResult = this.sim.applyLens(gesture.points);

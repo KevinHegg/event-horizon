@@ -3,6 +3,8 @@ import type { WorldPoint } from '../gestures';
 export type PulseGamePhase = 'build' | 'pulse' | 'ended';
 export type PulseEndReason = 'collapsed' | 'stabilized' | 'pulse-died' | 'manual';
 export type PulseNodeType = 'source' | 'conduit' | 'energy' | 'delay' | 'splitter';
+export type TutorialStep = 'swipe-chain' | 'tap-splitter' | 'press-play' | 'stabilize' | 'lens' | 'loops' | 'complete' | 'skipped';
+export type NodeTapAction = 'select' | 'prime' | 'delay' | 'splitter' | 'stabilize' | 'none';
 
 export interface PulseNode extends WorldPoint {
   id: number;
@@ -12,6 +14,10 @@ export interface PulseNode extends WorldPoint {
   label: string;
   activationMs: number;
   scoreCooldownMs: number;
+  primed: boolean;
+  delayLevel: 0 | 1 | 2;
+  splitterPriority: number;
+  stabilizedMs: number;
 }
 
 export interface PulseLink {
@@ -21,6 +27,7 @@ export interface PulseLink {
   temporary: boolean;
   ageMs: number;
   expiresMs: number;
+  flashMs: number;
 }
 
 export interface PulseState {
@@ -49,6 +56,21 @@ export interface HorizonLens {
   message: 'HORIZON LENS' | 'BRIDGE CREATED' | 'NO ANCHOR';
 }
 
+export interface ChainAnalysis {
+  reachableEnergyNodes: number;
+  totalEnergyNodes: number;
+  deadEndNodeIds: number[];
+  hasLoop: boolean;
+  linksUsed: number;
+  quality: 'Draw a chain' | 'Good start' | 'Hit more Energy nodes' | 'Dead end detected' | 'Loop possible' | 'Great loop';
+}
+
+export interface SuggestedFix {
+  fromId: number;
+  toId: number;
+  message: string;
+}
+
 export interface PulseLevel {
   seed: string;
   nodes: PulseNode[];
@@ -60,18 +82,28 @@ export interface PulseLevel {
 
 export type BuildInput =
   | { t: number; kind: 'link'; fromId: number; toId: number }
+  | { t: number; kind: 'chainSwipe'; nodeIds: number[]; path: { x: number; y: number; t: number }[] }
+  | { t: number; kind: 'nodeTap'; nodeId: number; action: NodeTapAction }
   | { t: number; kind: 'undo' }
   | { t: number; kind: 'clear' }
   | { t: number; kind: 'play' };
 
-export interface LiveInput {
-  t: number;
-  kind: 'lens';
-  path: { x: number; y: number; t: number }[];
-  fromId?: number;
-  toId?: number;
-  success: boolean;
-}
+export type LiveInput =
+  | {
+      t: number;
+      kind: 'lens';
+      path: { x: number; y: number; t: number }[];
+      fromId?: number;
+      toId?: number;
+      success: boolean;
+    }
+  | {
+      t: number;
+      kind: 'stabilize';
+      nodeId: number;
+      rating: 'perfect' | 'stabilized' | 'early' | 'late';
+      success: boolean;
+    };
 
 export interface PulseResult {
   score: number;
@@ -79,6 +111,8 @@ export interface PulseResult {
   maxMultiplier: number;
   loopsCompleted: number;
   linksUsed: number;
+  bestChainLength: number;
+  energyNodesHit: number;
   stabilized: boolean;
   collapsed: boolean;
 }
@@ -96,10 +130,14 @@ export interface PulseReplayPayload {
 
 export interface PulseInputResult {
   ok: boolean;
-  kind: 'select' | 'link' | 'undo' | 'clear' | 'play' | 'lens' | 'invalid' | 'none';
+  kind: 'select' | 'link' | 'chainSwipe' | 'nodeTap' | 'stabilize' | 'undo' | 'clear' | 'play' | 'lens' | 'fix' | 'invalid' | 'none';
   message: string;
   fromId?: number;
   toId?: number;
+  nodeId?: number;
+  nodeIds?: number[];
+  scoreDelta?: number;
+  energyDelta?: number;
 }
 
 export interface PulseSnapshot {
@@ -129,6 +167,15 @@ export interface PulseSnapshot {
   lenses: readonly HorizonLens[];
   selectedNodeId?: number;
   tutorialHint: string;
+  tutorialActive: boolean;
+  tutorialStep: TutorialStep;
+  tutorialHighlightNodeIds: readonly number[];
+  tutorialGhostPath: readonly WorldPoint[];
+  chainAnalysis: ChainAnalysis;
+  suggestedFixes: readonly SuggestedFix[];
+  lastChainNodeIds: readonly number[];
+  lastTapAction: NodeTapAction;
+  deadEndNodeId?: number;
   lastInputResult: PulseInputResult;
   stepHash: string;
 }

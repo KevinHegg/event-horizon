@@ -3,147 +3,162 @@ import { expect, test, type Page } from '@playwright/test';
 const WORLD_WIDTH = 1080;
 const WORLD_HEIGHT = 1920;
 
-test('help opens on first visit', async ({ page }) => {
+test('first visit opens updated help and tutorial', async ({ page }) => {
   await openGame(page);
   await expect(page.locator('#help-overlay')).toBeVisible();
-  await expect(page.locator('#help-title')).toHaveText('EVENT HORIZON');
-  await expect(page.locator('#help-overlay')).toContainText('Build a dark-energy chain');
+  await expect(page.locator('#help-overlay')).toContainText('Build a chain. Then keep it alive.');
+  await expect(page.locator('#help-play-button')).toHaveText('START TUTORIAL');
 });
 
-test('connect two nodes by tap-tap', async ({ page }) => {
-  await openGameAndPlay(page);
-  const nodes = await getNodes(page);
-  const source = nodes.find((node) => node.type === 'source');
-  const target = nodes.find((node) => node.type === 'energy');
-  expect(source).toBeTruthy();
-  expect(target).toBeTruthy();
-  await tapWorld(page, source!.x, source!.y);
-  await tapWorld(page, target!.x, target!.y);
-  const links = await page.evaluate(() => window.__EVENT_HORIZON_DEBUG__?.getLinks()) as Array<{ fromId: number; toId: number }>;
-  expect(links.some((link) => link.fromId === source!.id && link.toId === target!.id)).toBe(true);
+test('tutorial Step 1 highlights nodes and swipe creates a chain', async ({ page }) => {
+  await startTutorial(page);
+  const snapshot = await getSnapshot(page);
+  expect(snapshot.tutorialStep).toBe('swipe-chain');
+  expect(snapshot.tutorialHighlightNodeIds).toEqual([1, 2, 3]);
+  await swipeThroughNodes(page, [1, 2, 3]);
+  await page.waitForTimeout(160);
+  const after = await getSnapshot(page);
+  expect(after.linksUsed).toBe(2);
+  expect(after.tutorialStep).toBe('tap-splitter');
+  expect(after.lastChainNodeIds).toEqual([1, 2, 3]);
 });
 
-test('connect two nodes by drag', async ({ page }) => {
-  await openGameAndPlay(page);
-  const nodes = await getNodes(page);
-  const from = nodes.find((node) => node.type === 'energy');
-  const to = nodes.find((node) => node.type === 'delay');
-  expect(from).toBeTruthy();
-  expect(to).toBeTruthy();
-  const a = await worldToScreen(page, from!.x, from!.y);
-  const b = await worldToScreen(page, to!.x, to!.y);
-  await page.mouse.move(a.x, a.y);
-  await page.mouse.down();
-  await page.mouse.move(b.x, b.y, { steps: 8 });
-  await page.mouse.up();
-  const result = await page.evaluate(() => window.__EVENT_HORIZON_DEBUG__?.getLastInputResult()) as { ok: boolean; message: string };
-  expect(result.ok).toBe(true);
+test('tapping splitter changes tutorial state and output priority', async ({ page }) => {
+  await tutorialChainReady(page);
+  const before = await nodeById(page, 4);
+  await tapNode(page, 4);
+  const after = await nodeById(page, 4);
+  expect(after.splitterPriority).not.toBe(before.splitterPriority);
+  expect((await getSnapshot(page)).tutorialStep).toBe('press-play');
 });
 
-test('press play, pulse moves, and energy node scores', async ({ page }) => {
-  await openGameAndPlay(page);
-  await buildTutorialChain(page);
+test('pressing Play launches visible pulse and node tap stabilizes it', async ({ page }) => {
+  await tutorialReadyToPlay(page);
   await page.locator('#pulse-play-button').click();
-  await page.waitForFunction(() => {
-    const snapshot = window.__EVENT_HORIZON__?.getSnapshot() as { phase?: string; pulses?: unknown[] };
-    return snapshot?.phase === 'pulse' && Number(snapshot.pulses?.length) > 0;
-  });
-  const before = await page.evaluate(() => window.__EVENT_HORIZON__?.getSnapshot()) as { score: number };
-  await page.waitForFunction((score) => {
-    const snapshot = window.__EVENT_HORIZON__?.getSnapshot() as { score?: number };
-    return Number(snapshot?.score) > Number(score);
-  }, before.score);
-  const after = await page.evaluate(() => window.__EVENT_HORIZON__?.getSnapshot()) as { score: number; multiplier: number; phase: string };
-  expect(after.phase).toBe('pulse');
-  expect(after.score).toBeGreaterThan(before.score);
-  expect(after.multiplier).toBeGreaterThanOrEqual(1);
-});
-
-test('swipe during pulse phase creates Horizon Lens and records replay inputs', async ({ page }) => {
-  await openGameAndPlay(page);
-  await buildTutorialChain(page);
-  await page.locator('#pulse-play-button').click();
-  await page.waitForFunction(() => (window.__EVENT_HORIZON__?.getSnapshot() as { phase?: string })?.phase === 'pulse');
-  const nodes = await getNodes(page);
-  const a = nodes.find((node) => node.id === 6) ?? nodes[4];
-  const b = nodes.find((node) => node.id === 8) ?? nodes[5];
-  const start = await worldToScreen(page, a.x, a.y);
-  const end = await worldToScreen(page, b.x, b.y);
-  await page.mouse.move(start.x, start.y);
-  await page.mouse.down();
-  await page.mouse.move((start.x + end.x) / 2, (start.y + end.y) / 2 - 30, { steps: 5 });
-  await page.mouse.move(end.x, end.y, { steps: 5 });
-  await page.mouse.up();
+  await page.waitForFunction(() => (window.__EVENT_HORIZON__?.getSnapshot() as { phase?: string } | undefined)?.phase === 'pulse');
+  await page.waitForTimeout(2200);
+  await tapNode(page, 3);
   await page.waitForTimeout(120);
-  const result = await page.evaluate(() => window.__EVENT_HORIZON_DEBUG__?.getLastInputResult()) as { kind: string; message: string };
+  const snapshot = await getSnapshot(page);
+  expect(snapshot.lastInputResult.kind).toBe('stabilize');
+  expect(snapshot.lastInputResult.ok).toBe(true);
+  expect(snapshot.tutorialStep).toBe('lens');
+});
+
+test('swiping Horizon Lens creates bridge and replay records grammar', async ({ page }) => {
+  await tutorialPulseReadyForLens(page);
+  await swipeThroughNodes(page, [3, 4]);
+  await page.waitForTimeout(160);
+  const snapshot = await getSnapshot(page);
   const replay = await page.evaluate(() => window.__EVENT_HORIZON__?.getReplayPayload()) as {
-    buildInputs: unknown[];
-    liveInputs: Array<{ kind: string; success: boolean }>;
+    buildInputs: Array<{ kind: string }>;
+    liveInputs: Array<{ kind: string; success?: boolean }>;
   };
-  expect(result.kind).toBe('lens');
-  expect(['BRIDGE CREATED', 'NO ANCHOR']).toContain(result.message);
-  expect(replay.buildInputs.some((input) => (input as { kind: string }).kind === 'play')).toBe(true);
+  expect(snapshot.lastInputResult.kind).toBe('lens');
+  expect(snapshot.lastInputResult.ok).toBe(true);
+  expect(snapshot.links.some((link) => link.temporary && link.fromId === 3 && link.toId === 4)).toBe(true);
+  expect(replay.buildInputs.some((input) => input.kind === 'chainSwipe')).toBe(true);
+  expect(replay.buildInputs.some((input) => input.kind === 'nodeTap')).toBe(true);
+  expect(replay.buildInputs.some((input) => input.kind === 'play')).toBe(true);
+  expect(replay.liveInputs.some((input) => input.kind === 'stabilize')).toBe(true);
   expect(replay.liveInputs.some((input) => input.kind === 'lens')).toBe(true);
 });
 
-test('collapse or stabilized end state is reachable', async ({ page }) => {
-  await openGameAndPlay(page);
-  await page.evaluate(() => window.__EVENT_HORIZON_DEBUG__?.forceCollapse());
-  await page.waitForTimeout(150);
-  const snapshot = await page.evaluate(() => window.__EVENT_HORIZON__?.getSnapshot()) as {
-    phase: string;
-    collapsed: boolean;
-    stabilized: boolean;
-  };
-  expect(snapshot.phase).toBe('ended');
-  expect(snapshot.collapsed || snapshot.stabilized).toBe(true);
+test('dead-end failure shows suggested fix and FIX CHAIN returns to build', async ({ page }) => {
+  await startTutorial(page);
+  await page.evaluate(() => {
+    window.__EVENT_HORIZON_DEBUG__?.skipTutorial();
+    window.__EVENT_HORIZON_DEBUG__?.clearLinks();
+    window.__EVENT_HORIZON_DEBUG__?.addLink(1, 2);
+    window.__EVENT_HORIZON_DEBUG__?.playPulse();
+  });
+  await page.waitForFunction(() => (window.__EVENT_HORIZON__?.getSnapshot() as { phase?: string } | undefined)?.phase === 'ended', null, { timeout: 9000 });
+  const ended = await getSnapshot(page);
+  expect(ended.endReason).toBe('pulse-died');
+  expect(ended.suggestedFixes.length).toBeGreaterThan(0);
+  await page.locator('#pulse-undo-button').click();
+  await page.waitForTimeout(120);
+  expect((await getSnapshot(page)).phase).toBe('build');
 });
 
 async function openGame(page: Page): Promise<void> {
   await page.addInitScript(() => {
     window.localStorage.clear();
   });
-  await page.goto('./?seed=tutorial&debugInput=1');
+  await page.goto('./?seed=tutorial-001&debugInput=1');
   await page.locator('canvas').waitFor({ state: 'visible' });
 }
 
-async function openGameAndPlay(page: Page): Promise<void> {
+async function startTutorial(page: Page): Promise<void> {
   await openGame(page);
   await page.locator('#help-play-button').click();
   await expect(page.locator('#help-overlay')).toBeHidden();
 }
 
-async function buildTutorialChain(page: Page): Promise<void> {
-  const nodes = await getNodes(page);
-  const byId = new Map(nodes.map((node) => [node.id, node]));
-  for (const [fromId, toId] of [
-    [1, 2],
-    [2, 3],
-    [3, 4],
-    [4, 5],
-    [4, 6]
-  ]) {
-    const from = byId.get(fromId);
-    const to = byId.get(toId);
-    expect(from).toBeTruthy();
-    expect(to).toBeTruthy();
-    await tapWorld(page, from!.x, from!.y);
-    await tapWorld(page, to!.x, to!.y);
+async function tutorialChainReady(page: Page): Promise<void> {
+  await startTutorial(page);
+  await swipeThroughNodes(page, [1, 2, 3]);
+  await page.waitForFunction(() => (window.__EVENT_HORIZON__?.getSnapshot() as { tutorialStep?: string } | undefined)?.tutorialStep === 'tap-splitter');
+}
+
+async function tutorialReadyToPlay(page: Page): Promise<void> {
+  await tutorialChainReady(page);
+  await tapNode(page, 4);
+  await page.waitForFunction(() => (window.__EVENT_HORIZON__?.getSnapshot() as { tutorialStep?: string } | undefined)?.tutorialStep === 'press-play');
+}
+
+async function tutorialPulseReadyForLens(page: Page): Promise<void> {
+  await tutorialReadyToPlay(page);
+  await page.locator('#pulse-play-button').click();
+  await page.waitForFunction(() => (window.__EVENT_HORIZON__?.getSnapshot() as { phase?: string } | undefined)?.phase === 'pulse');
+  await page.waitForTimeout(2200);
+  await tapNode(page, 3);
+  await page.waitForFunction(() => (window.__EVENT_HORIZON__?.getSnapshot() as { tutorialStep?: string } | undefined)?.tutorialStep === 'lens');
+}
+
+async function getSnapshot(page: Page) {
+  return (await page.evaluate(() => window.__EVENT_HORIZON__?.getSnapshot())) as {
+    phase: string;
+    tutorialStep: string;
+    tutorialHighlightNodeIds: number[];
+    linksUsed: number;
+    lastChainNodeIds: number[];
+    lastInputResult: { kind: string; ok: boolean; message: string };
+    links: Array<{ fromId: number; toId: number; temporary: boolean }>;
+    suggestedFixes: unknown[];
+    endReason?: string;
+  };
+}
+
+async function nodeById(page: Page, id: number) {
+  const node = await page.evaluate((nodeId) => {
+    const nodes = window.__EVENT_HORIZON_DEBUG__?.getNodes() as Array<{ id: number; x: number; y: number; splitterPriority: number }> | undefined;
+    return nodes?.find((candidate) => candidate.id === nodeId);
+  }, id);
+  if (!node) {
+    throw new Error(`Missing node ${id}`);
   }
+  return node as { id: number; x: number; y: number; splitterPriority: number };
 }
 
-async function getNodes(page: Page) {
-  return (await page.evaluate(() => window.__EVENT_HORIZON_DEBUG__?.getNodes())) as Array<{
-    id: number;
-    type: string;
-    x: number;
-    y: number;
-  }>;
-}
-
-async function tapWorld(page: Page, x: number, y: number): Promise<void> {
-  const point = await worldToScreen(page, x, y);
+async function tapNode(page: Page, id: number): Promise<void> {
+  const node = await nodeById(page, id);
+  const point = await worldToScreen(page, node.x, node.y);
   await page.mouse.click(point.x, point.y);
+}
+
+async function swipeThroughNodes(page: Page, ids: number[]): Promise<void> {
+  const points = [];
+  for (const id of ids) {
+    const node = await nodeById(page, id);
+    points.push(await worldToScreen(page, node.x, node.y));
+  }
+  await page.mouse.move(points[0].x, points[0].y);
+  await page.mouse.down();
+  for (const point of points.slice(1)) {
+    await page.mouse.move(point.x, point.y, { steps: 8 });
+  }
+  await page.mouse.up();
 }
 
 async function worldToScreen(page: Page, x: number, y: number): Promise<{ x: number; y: number }> {

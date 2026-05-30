@@ -1,12 +1,14 @@
 import { INITIAL_ENERGY, MAX_ENERGY } from '../constants';
 import { clamp } from '../math';
 import { quantizeGesturePath, type GesturePathPoint, type WorldPoint } from '../gestures';
-import { nearestTwoNodesToPath } from './PulseGeometry';
+import { distancePointToSegment, nearestTwoNodesToPath, nodesCrossedByPath } from './PulseGeometry';
 import { generatePulseLevel } from './PulseLevelGenerator';
 import type {
   BuildInput,
+  ChainAnalysis,
   HorizonLens,
   LiveInput,
+  NodeTapAction,
   PulseGamePhase,
   PulseInputResult,
   PulseLevel,
@@ -15,17 +17,23 @@ import type {
   PulseReplayPayload,
   PulseResult,
   PulseSnapshot,
-  PulseState
+  PulseState,
+  SuggestedFix,
+  TutorialStep
 } from './PulseTypes';
 
-const PULSE_SPEED = 460;
+const NORMAL_PULSE_SPEED = 310;
+const TUTORIAL_PULSE_SPEED = 220;
 const LINK_TRAVERSAL_SCORE = 10;
 const ENERGY_NODE_SCORE = 100;
 const DELAY_NODE_SCORE = 25;
 const SPLITTER_NODE_SCORE = 75;
-const LENS_DURATION_MS = 1200;
+const LENS_DURATION_MS = 1500;
+const TUTORIAL_LENS_DURATION_MS = 2100;
 const LENS_MAX_CHARGES = 2;
-const ENERGY_DRAIN_PER_SECOND = 0.52;
+const ENERGY_DRAIN_PER_SECOND = 0.38;
+const STABILIZE_SCORE = 50;
+const DELAY_MS = [360, 700, 1080] as const;
 
 export interface PulseSimulationOptions {
   seed: string;
@@ -33,8 +41,8 @@ export interface PulseSimulationOptions {
 }
 
 export class PulseSimulation {
-  readonly seed: string;
   readonly startedAt: number;
+  private seedValue: string;
   private level: PulseLevel;
   private phase: PulseGamePhase = 'build';
   private timeMs = 0;
@@ -48,6 +56,7 @@ export class PulseSimulation {
   private nextPulseId = 1;
   private nextLensId = 1;
   private endReason: PulseSnapshot['endReason'];
+  private deadEndNodeId: number | undefined;
   private collapsed = false;
   private stabilized = false;
   private buildInputs: BuildInput[] = [];
@@ -59,15 +68,29 @@ export class PulseSimulation {
   private selectedNodeId: number | undefined;
   private stepHash = '00000000';
   private lensCharges = LENS_MAX_CHARGES;
+  private tutorialActive = false;
+  private tutorialStep: TutorialStep = 'skipped';
+  private lastChainNodeIds: number[] = [];
+  private lastTapAction: NodeTapAction = 'none';
+  private energyNodesHit = new Set<number>();
+  private slowDrainMs = 0;
 
   constructor(options: PulseSimulationOptions) {
-    this.seed = options.seed;
+    this.seedValue = options.seed;
     this.startedAt = options.startedAt;
     this.level = generatePulseLevel(options.seed);
+    if (options.seed === 'tutorial-001') {
+      this.startTutorial();
+    }
     this.updateHash();
   }
 
+  get seed(): string {
+    return this.seedValue;
+  }
+
   reset(seed = this.seed): void {
+    this.seedValue = seed;
     this.level = generatePulseLevel(seed);
     this.phase = 'build';
     this.timeMs = 0;
@@ -81,6 +104,7 @@ export class PulseSimulation {
     this.nextPulseId = 1;
     this.nextLensId = 1;
     this.endReason = undefined;
+    this.deadEndNodeId = undefined;
     this.collapsed = false;
     this.stabilized = false;
     this.buildInputs = [];
@@ -90,7 +114,13 @@ export class PulseSimulation {
     this.lenses = [];
     this.selectedNodeId = undefined;
     this.lensCharges = LENS_MAX_CHARGES;
-    this.lastInputResult = { ok: true, kind: 'none', message: 'CONNECT TWO NODES' };
+    this.lastChainNodeIds = [];
+    this.lastTapAction = 'none';
+    this.energyNodesHit = new Set();
+    this.slowDrainMs = 0;
+    this.tutorialActive = seed === 'tutorial-001';
+    this.tutorialStep = this.tutorialActive ? 'swipe-chain' : 'skipped';
+    this.lastInputResult = { ok: true, kind: 'none', message: this.tutorialActive ? 'SWIPE THROUGH THESE NODES' : 'DRAW A CHAIN' };
     this.updateHash();
   }
 
@@ -106,7 +136,10 @@ export class PulseSimulation {
     this.updateTimedVisuals(dtMs);
 
     if (this.phase === 'pulse') {
-      this.darkEnergy = clamp(this.darkEnergy - (dtMs / 1000) * ENERGY_DRAIN_PER_SECOND, 0, MAX_ENERGY);
+      const tutorialGrace = this.tutorialActive && this.timeMs < 10000;
+      const drainScale = this.slowDrainMs > 0 || tutorialGrace ? 0.35 : 1;
+      this.darkEnergy = clamp(this.darkEnergy - (dtMs / 1000) * ENERGY_DRAIN_PER_SECOND * drainScale, 0, MAX_ENERGY);
+      this.slowDrainMs = Math.max(0, this.slowDrainMs - dtMs);
       this.updatePulses(dtMs);
       this.expireTemporaryLinks(dtMs);
       if (this.darkEnergy <= 0) {
@@ -145,7 +178,8 @@ export class PulseSimulation {
       toId,
       temporary: false,
       ageMs: 0,
-      expiresMs: 0
+      expiresMs: 0,
+      flashMs: 420
     };
     this.nextLinkId += 1;
     this.links.push(link);
@@ -154,6 +188,172 @@ export class PulseSimulation {
     }
     this.selectedNodeId = undefined;
     this.lastInputResult = { ok: true, kind: 'link', message: 'GRAVITATIONAL LINK', fromId, toId };
+    this.updateHash();
+    return this.lastInputResult;
+  }
+
+  applyChainSwipe(points: readonly GesturePathPoint[], record = true): PulseInputResult {
+    if (this.phase !== 'build') {
+      this.lastInputResult = { ok: false, kind: 'invalid', message: 'CHAIN ONLY DURING BUILD' };
+      return this.lastInputResult;
+    }
+    const path = quantizeGesturePath(points, 24);
+    const crossed = nodesCrossedByPath(this.level.nodes, path, 78);
+    const nodeIds = crossed.map((node) => node.id);
+    this.lastChainNodeIds = nodeIds;
+    if (nodeIds.length < 2) {
+      this.lastInputResult = { ok: false, kind: 'chainSwipe', message: 'NO NODES CROSSED', nodeIds };
+      this.advanceTutorial('chain-miss');
+      return this.lastInputResult;
+    }
+
+    let created = 0;
+    const createdNodes: number[] = [nodeIds[0]];
+    for (let index = 1; index < nodeIds.length; index += 1) {
+      const fromId = nodeIds[index - 1];
+      const toId = nodeIds[index];
+      if (fromId === toId) {
+        continue;
+      }
+      const result = this.addLink(fromId, toId, false);
+      if (!result.ok) {
+        if (result.message === 'LINK EXISTS') {
+          createdNodes.push(toId);
+          continue;
+        }
+        if (result.message === 'LINK LIMIT') {
+          break;
+        }
+        continue;
+      }
+      created += 1;
+      createdNodes.push(toId);
+    }
+
+    if (created > 0 && record) {
+      this.buildInputs.push({ t: Math.round(this.timeMs), kind: 'chainSwipe', nodeIds: createdNodes, path });
+    }
+    this.selectedNodeId = undefined;
+    this.lastInputResult = created > 0
+      ? { ok: true, kind: 'chainSwipe', message: `CHAIN CREATED ${created} LINKS`, nodeIds: createdNodes }
+      : { ok: false, kind: 'chainSwipe', message: 'CHAIN BLOCKED', nodeIds };
+    this.advanceTutorial('chain');
+    this.updateHash();
+    return this.lastInputResult;
+  }
+
+  tapNode(nodeId: number, record = true): PulseInputResult {
+    const node = this.nodeById(nodeId);
+    if (!node) {
+      this.lastInputResult = { ok: false, kind: 'invalid', message: 'NO NODE', nodeId };
+      return this.lastInputResult;
+    }
+    if (this.phase === 'pulse') {
+      return this.stabilizeNode(nodeId, record);
+    }
+
+    let action: NodeTapAction = 'select';
+    if (node.type === 'energy') {
+      node.primed = !node.primed;
+      node.activationMs = 520;
+      action = 'prime';
+      this.lastInputResult = { ok: true, kind: 'nodeTap', message: node.primed ? 'ENERGY PRIMED' : 'ENERGY UNPRIMED', nodeId };
+    } else if (node.type === 'delay') {
+      node.delayLevel = ((node.delayLevel + 1) % 3) as 0 | 1 | 2;
+      node.activationMs = 520;
+      action = 'delay';
+      this.lastInputResult = { ok: true, kind: 'nodeTap', message: `DELAY ${node.delayLevel + 1}`, nodeId };
+    } else if (node.type === 'splitter') {
+      node.splitterPriority = (node.splitterPriority + 1) % 3;
+      node.activationMs = 520;
+      action = 'splitter';
+      this.lastInputResult = { ok: true, kind: 'nodeTap', message: 'SPLITTER AIMED', nodeId };
+      this.advanceTutorial('splitter');
+    } else {
+      this.selectedNodeId = nodeId;
+      this.lastInputResult = { ok: true, kind: 'select', message: `SELECTED ${node.label}`, nodeId };
+    }
+    this.lastTapAction = action;
+    if (record) {
+      this.buildInputs.push({ t: Math.round(this.timeMs), kind: 'nodeTap', nodeId, action });
+    }
+    this.updateHash();
+    return this.lastInputResult;
+  }
+
+  stabilizeNode(nodeId: number, record = true): PulseInputResult {
+    const node = this.nodeById(nodeId);
+    if (!node) {
+      this.lastInputResult = { ok: false, kind: 'invalid', message: 'NO NODE', nodeId };
+      return this.lastInputResult;
+    }
+    const arrival = this.arrivalReadiness(nodeId);
+    let rating: 'perfect' | 'stabilized' | 'early' | 'late' = 'early';
+    let success = false;
+    if (arrival === 'late') {
+      rating = 'late';
+    } else if (arrival === 'perfect') {
+      rating = 'perfect';
+      success = true;
+    } else if (arrival === 'soon') {
+      rating = 'stabilized';
+      success = true;
+    }
+
+    if (success) {
+      node.stabilizedMs = 760;
+      node.activationMs = 620;
+      this.addScore(rating === 'perfect' ? STABILIZE_SCORE + 25 : STABILIZE_SCORE, 2.2);
+      this.slowDrainMs = 1500;
+      this.lastInputResult = {
+        ok: true,
+        kind: 'stabilize',
+        message: rating === 'perfect' ? 'PERFECT TAP +75' : 'STABILIZED +50',
+        nodeId,
+        scoreDelta: rating === 'perfect' ? 75 : 50,
+        energyDelta: 2
+      };
+    } else {
+      this.lastInputResult = { ok: false, kind: 'stabilize', message: rating === 'late' ? 'LATE' : 'EARLY', nodeId };
+    }
+    this.lastTapAction = 'stabilize';
+    if (record) {
+      this.liveInputs.push({ t: Math.round(this.timeMs), kind: 'stabilize', nodeId, rating, success });
+    }
+    this.advanceTutorial('stabilize');
+    this.updateHash();
+    return this.lastInputResult;
+  }
+
+  removeLinkNear(point: WorldPoint): PulseInputResult {
+    if (this.phase !== 'build') {
+      this.lastInputResult = { ok: false, kind: 'invalid', message: 'LINKS LOCKED' };
+      return this.lastInputResult;
+    }
+    let bestIndex = -1;
+    let bestDistance = 54;
+    for (let index = 0; index < this.links.length; index += 1) {
+      const link = this.links[index];
+      if (link.temporary) {
+        continue;
+      }
+      const from = this.nodeById(link.fromId);
+      const to = this.nodeById(link.toId);
+      if (!from || !to) {
+        continue;
+      }
+      const distance = distancePointToSegment(point, from, to);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestIndex = index;
+      }
+    }
+    if (bestIndex === -1) {
+      this.lastInputResult = { ok: false, kind: 'invalid', message: 'NO LINK' };
+      return this.lastInputResult;
+    }
+    this.links.splice(bestIndex, 1);
+    this.lastInputResult = { ok: true, kind: 'clear', message: 'LINK REMOVED' };
     this.updateHash();
     return this.lastInputResult;
   }
@@ -197,6 +397,7 @@ export class PulseSimulation {
       this.buildInputs.push({ t: 0, kind: 'play' });
     }
     this.lastInputResult = { ok: true, kind: 'play', message: 'STABILIZING PULSE' };
+    this.advanceTutorial('play');
     this.updateHash();
     return this.lastInputResult;
   }
@@ -217,7 +418,7 @@ export class PulseSimulation {
     if (!anchors) {
       this.createLens(lensPath, false);
       this.liveInputs.push({ t: Math.round(this.timeMs), kind: 'lens', path, success: false });
-      this.lastInputResult = { ok: false, kind: 'lens', message: 'NO ANCHOR' };
+      this.lastInputResult = { ok: false, kind: 'lens', message: 'NO ANCHOR - SWIPE BETWEEN TWO NODES' };
       return this.lastInputResult;
     }
 
@@ -226,7 +427,7 @@ export class PulseSimulation {
     if (!validation.ok) {
       this.createLens(lensPath, false);
       this.liveInputs.push({ t: Math.round(this.timeMs), kind: 'lens', path, fromId: from.id, toId: to.id, success: false });
-      this.lastInputResult = { ok: false, kind: 'lens', message: 'NO ANCHOR', fromId: from.id, toId: to.id };
+      this.lastInputResult = { ok: false, kind: 'lens', message: 'NO ANCHOR - SWIPE BETWEEN TWO NODES', fromId: from.id, toId: to.id };
       return this.lastInputResult;
     }
 
@@ -236,13 +437,15 @@ export class PulseSimulation {
       toId: to.id,
       temporary: true,
       ageMs: 0,
-      expiresMs: LENS_DURATION_MS
+      expiresMs: this.tutorialActive ? TUTORIAL_LENS_DURATION_MS : LENS_DURATION_MS,
+      flashMs: 520
     });
     this.nextLinkId += 1;
     this.lensCharges = Math.max(0, this.lensCharges - 1);
     this.createLens(lensPath, true, from.id, to.id);
     this.liveInputs.push({ t: Math.round(this.timeMs), kind: 'lens', path, fromId: from.id, toId: to.id, success: true });
-    this.lastInputResult = { ok: true, kind: 'lens', message: 'BRIDGE CREATED', fromId: from.id, toId: to.id };
+    this.lastInputResult = { ok: true, kind: 'lens', message: 'HORIZON LENS - BRIDGE CREATED', fromId: from.id, toId: to.id };
+    this.advanceTutorial('lens');
     this.updateHash();
     return this.lastInputResult;
   }
@@ -267,6 +470,84 @@ export class PulseSimulation {
     this.endRun('collapsed');
   }
 
+  startTutorial(): void {
+    this.seedValue = 'tutorial-001';
+    this.level = generatePulseLevel(this.seedValue);
+    this.tutorialActive = true;
+    this.tutorialStep = 'swipe-chain';
+    this.phase = 'build';
+    this.timeMs = 0;
+    this.score = 0;
+    this.multiplier = 1;
+    this.maxMultiplier = 1;
+    this.chainLength = 0;
+    this.loopsCompleted = 0;
+    this.nextLinkId = 1;
+    this.nextPulseId = 1;
+    this.nextLensId = 1;
+    this.buildInputs = [];
+    this.liveInputs = [];
+    this.links = [];
+    this.pulses = [];
+    this.lenses = [];
+    this.endReason = undefined;
+    this.deadEndNodeId = undefined;
+    this.collapsed = false;
+    this.stabilized = false;
+    this.selectedNodeId = undefined;
+    this.darkEnergy = INITIAL_ENERGY;
+    this.lensCharges = LENS_MAX_CHARGES;
+    this.lastChainNodeIds = [];
+    this.lastTapAction = 'none';
+    this.energyNodesHit = new Set();
+    this.slowDrainMs = 0;
+    this.lastInputResult = { ok: true, kind: 'none', message: 'SWIPE THROUGH THESE NODES', nodeIds: [1, 2, 3] };
+    this.updateHash();
+  }
+
+  skipTutorial(): void {
+    this.tutorialActive = false;
+    this.tutorialStep = 'skipped';
+    this.lastInputResult = { ok: true, kind: 'none', message: 'DRAW A CHAIN' };
+    this.updateHash();
+  }
+
+  getTutorialStep(): TutorialStep {
+    return this.tutorialStep;
+  }
+
+  analyzeChain(): ChainAnalysis {
+    return this.computeChainAnalysis();
+  }
+
+  getSuggestedFixes(): readonly SuggestedFix[] {
+    return this.computeSuggestedFixes();
+  }
+
+  primeNode(id: number): PulseInputResult {
+    const node = this.nodeById(id);
+    if (!node || node.type !== 'energy') {
+      this.lastInputResult = { ok: false, kind: 'invalid', message: 'NOT ENERGY', nodeId: id };
+      return this.lastInputResult;
+    }
+    node.primed = true;
+    node.activationMs = 520;
+    this.lastTapAction = 'prime';
+    this.lastInputResult = { ok: true, kind: 'nodeTap', message: 'ENERGY PRIMED', nodeId: id };
+    this.updateHash();
+    return this.lastInputResult;
+  }
+
+  cycleNode(id: number): PulseInputResult {
+    return this.tapNode(id);
+  }
+
+  fixChain(): PulseInputResult {
+    this.forceBuildPhase();
+    this.lastInputResult = { ok: true, kind: 'fix', message: 'FIX THE DEAD END', nodeId: this.deadEndNodeId };
+    return this.lastInputResult;
+  }
+
   getNodes(): readonly PulseNode[] {
     return this.level.nodes;
   }
@@ -289,11 +570,16 @@ export class PulseSimulation {
       mode: 'pulse-chain',
       seed: this.seed,
       startedAt: this.startedAt,
-      buildInputs: this.buildInputs.map((input) => ({ ...input })),
-      liveInputs: this.liveInputs.map((input) => ({
-        ...input,
-        path: input.path.map((point) => ({ ...point }))
-      })),
+      buildInputs: this.buildInputs.map((input) =>
+        input.kind === 'chainSwipe'
+          ? { ...input, nodeIds: [...input.nodeIds], path: input.path.map((point) => ({ ...point })) }
+          : { ...input }
+      ),
+      liveInputs: this.liveInputs.map((input) =>
+        input.kind === 'lens'
+          ? { ...input, path: input.path.map((point) => ({ ...point })) }
+          : { ...input }
+      ),
       result: this.getResult(),
       stepHash: this.stepHash
     };
@@ -327,6 +613,15 @@ export class PulseSimulation {
       lenses: this.lenses,
       selectedNodeId: this.selectedNodeId,
       tutorialHint: this.tutorialHint(),
+      tutorialActive: this.tutorialActive,
+      tutorialStep: this.tutorialStep,
+      tutorialHighlightNodeIds: this.tutorialHighlightNodeIds(),
+      tutorialGhostPath: this.tutorialGhostPath(),
+      chainAnalysis: this.computeChainAnalysis(),
+      suggestedFixes: this.computeSuggestedFixes(),
+      lastChainNodeIds: this.lastChainNodeIds,
+      lastTapAction: this.lastTapAction,
+      deadEndNodeId: this.deadEndNodeId,
       lastInputResult: this.lastInputResult,
       stepHash: this.stepHash
     };
@@ -418,12 +713,15 @@ export class PulseSimulation {
 
     if (node.type === 'energy') {
       const fresh = node.scoreCooldownMs <= 0;
-      this.addScore(fresh ? ENERGY_NODE_SCORE : 25, fresh ? 6.2 : 1.4);
+      const primedBonus = node.primed ? 80 : 0;
+      this.addScore((fresh ? ENERGY_NODE_SCORE : 25) + primedBonus, fresh ? 6.2 + primedBonus / 40 : 1.4);
+      node.primed = false;
       node.scoreCooldownMs = fresh ? 2600 : node.scoreCooldownMs;
+      this.energyNodesHit.add(node.id);
       this.lensCharges = Math.min(LENS_MAX_CHARGES, this.lensCharges + 1);
     } else if (node.type === 'delay') {
       this.addScore(DELAY_NODE_SCORE, 1.1);
-      pulse.delayMs = 620;
+      pulse.delayMs = DELAY_MS[node.delayLevel];
       return;
     } else if (node.type === 'splitter') {
       this.addScore(SPLITTER_NODE_SCORE, 1.8);
@@ -439,15 +737,20 @@ export class PulseSimulation {
       return;
     }
 
-    if (this.nodeById(pulse.currentNodeId)?.type === 'splitter' && outgoing.length > 1) {
-      for (const link of outgoing) {
+    const currentNode = this.nodeById(pulse.currentNodeId);
+    const orderedOutgoing = currentNode?.type === 'splitter'
+      ? [...outgoing].sort((a, b) => splitterOrder(a, b, currentNode.splitterPriority))
+      : outgoing;
+
+    if (currentNode?.type === 'splitter' && orderedOutgoing.length > 1) {
+      for (const link of orderedOutgoing) {
         this.spawnPulse(pulse.currentNodeId, link.toId, pulse.previousNodeId, pulse.comboChainLength, pulse.visitedNodeIds);
       }
       pulse.alive = false;
       return;
     }
 
-    const preferred = outgoing.find((link) => link.toId !== pulse.previousNodeId) ?? outgoing[0];
+    const preferred = orderedOutgoing.find((link) => link.toId !== pulse.previousNodeId) ?? orderedOutgoing[0];
     pulse.nextNodeId = preferred.toId;
     pulse.progress = 0;
   }
@@ -475,7 +778,7 @@ export class PulseSimulation {
       previousNodeId,
       nextNodeId,
       progress: 0,
-      speed: PULSE_SPEED,
+      speed: this.tutorialActive ? TUTORIAL_PULSE_SPEED : NORMAL_PULSE_SPEED,
       ageMs: 0,
       energy: 1,
       comboChainLength,
@@ -488,6 +791,7 @@ export class PulseSimulation {
 
   private killPulse(pulse: PulseState): void {
     pulse.alive = false;
+    this.deadEndNodeId = pulse.currentNodeId;
     this.darkEnergy = clamp(this.darkEnergy - 5.6, 0, MAX_ENERGY);
     this.multiplier = 1;
     this.lastInputResult = { ok: false, kind: 'invalid', message: 'DEAD END' };
@@ -510,6 +814,10 @@ export class PulseSimulation {
     for (const node of this.level.nodes) {
       node.activationMs = Math.max(0, node.activationMs - dtMs);
       node.scoreCooldownMs = Math.max(0, node.scoreCooldownMs - dtMs);
+      node.stabilizedMs = Math.max(0, node.stabilizedMs - dtMs);
+    }
+    for (const link of this.links) {
+      link.flashMs = Math.max(0, link.flashMs - dtMs);
     }
     for (let index = this.lenses.length - 1; index >= 0; index -= 1) {
       const lens = this.lenses[index];
@@ -569,15 +877,37 @@ export class PulseSimulation {
       maxMultiplier: this.maxMultiplier,
       loopsCompleted: this.loopsCompleted,
       linksUsed: this.links.filter((link) => !link.temporary).length,
+      bestChainLength: this.chainLength,
+      energyNodesHit: this.energyNodesHit.size,
       stabilized: this.stabilized,
       collapsed: this.collapsed
     };
   }
 
   private tutorialHint(): string {
+    if (this.tutorialActive) {
+      if (this.tutorialStep === 'swipe-chain') {
+        return 'SWIPE THROUGH THESE NODES';
+      }
+      if (this.tutorialStep === 'tap-splitter') {
+        return 'TAP THE SPLITTER TO AIM IT';
+      }
+      if (this.tutorialStep === 'press-play') {
+        return 'PRESS PLAY';
+      }
+      if (this.tutorialStep === 'stabilize') {
+        return 'TAP THE NEXT NODE TO STABILIZE';
+      }
+      if (this.tutorialStep === 'lens') {
+        return 'SWIPE BETWEEN NODES TO CREATE A HORIZON LENS';
+      }
+      if (this.tutorialStep === 'loops') {
+        return 'BUILD LOOPS TO DELAY COLLAPSE';
+      }
+    }
     if (this.phase === 'build') {
       if (this.links.filter((link) => !link.temporary).length === 0) {
-        return 'CONNECT TWO NODES';
+        return 'SWIPE THROUGH NODES TO DRAW A CHAIN';
       }
       return 'PRESS PLAY';
     }
@@ -587,6 +917,152 @@ export class PulseSimulation {
     return this.phase === 'ended' ? (this.stabilized ? 'SECTOR STABILIZED' : 'GALAXY COLLAPSED') : 'WATCH THE PULSE';
   }
 
+  private advanceTutorial(event: 'chain' | 'chain-miss' | 'splitter' | 'play' | 'stabilize' | 'lens'): void {
+    if (!this.tutorialActive) {
+      return;
+    }
+    if (this.tutorialStep === 'swipe-chain' && event === 'chain' && this.links.some((link) => link.fromId === 1 && link.toId === 2) && this.links.some((link) => link.fromId === 2 && link.toId === 3)) {
+      this.tutorialStep = 'tap-splitter';
+      this.lastInputResult = { ...this.lastInputResult, message: 'CHAIN CREATED. TAP THE SPLITTER' };
+    } else if (this.tutorialStep === 'tap-splitter' && event === 'splitter') {
+      this.tutorialStep = 'press-play';
+    } else if (this.tutorialStep === 'press-play' && event === 'play') {
+      this.tutorialStep = 'stabilize';
+    } else if (this.tutorialStep === 'stabilize' && event === 'stabilize') {
+      this.tutorialStep = 'lens';
+    } else if (this.tutorialStep === 'lens' && event === 'lens') {
+      this.tutorialStep = 'loops';
+    }
+  }
+
+  private tutorialHighlightNodeIds(): number[] {
+    if (!this.tutorialActive) {
+      return [];
+    }
+    if (this.tutorialStep === 'swipe-chain') {
+      return [1, 2, 3];
+    }
+    if (this.tutorialStep === 'tap-splitter') {
+      return [4];
+    }
+    if (this.tutorialStep === 'stabilize') {
+      return [3, 4];
+    }
+    if (this.tutorialStep === 'lens') {
+      return [3, 4];
+    }
+    return [];
+  }
+
+  private tutorialGhostPath(): WorldPoint[] {
+    const ids = this.tutorialHighlightNodeIds();
+    if (ids.length < 2) {
+      return [];
+    }
+    return ids
+      .map((id) => this.nodeById(id))
+      .filter((node): node is PulseNode => node !== undefined)
+      .map((node) => ({ x: node.x, y: node.y }));
+  }
+
+  private computeChainAnalysis(): ChainAnalysis {
+    const totalEnergyNodes = this.level.nodes.filter((node) => node.type === 'energy').length;
+    const reachable = this.reachableFromSource();
+    const reachableEnergyNodes = this.level.nodes.filter((node) => node.type === 'energy' && reachable.has(node.id)).length;
+    const deadEndNodeIds = [...reachable].filter((nodeId) => nodeId !== this.level.sourceId && this.outgoingLinks(nodeId).filter((link) => !link.temporary).length === 0);
+    const hasLoop = this.hasReachableLoop();
+    const linksUsed = this.links.filter((link) => !link.temporary).length;
+    let quality: ChainAnalysis['quality'] = 'Draw a chain';
+    if (linksUsed > 0) {
+      quality = 'Good start';
+    }
+    if (deadEndNodeIds.length > 0) {
+      quality = 'Dead end detected';
+    } else if (hasLoop && reachableEnergyNodes >= 2) {
+      quality = 'Great loop';
+    } else if (hasLoop) {
+      quality = 'Loop possible';
+    } else if (reachableEnergyNodes < Math.min(2, totalEnergyNodes)) {
+      quality = 'Hit more Energy nodes';
+    }
+    return { reachableEnergyNodes, totalEnergyNodes, deadEndNodeIds, hasLoop, linksUsed, quality };
+  }
+
+  private computeSuggestedFixes(): SuggestedFix[] {
+    const analysis = this.computeChainAnalysis();
+    const fromId = this.deadEndNodeId ?? analysis.deadEndNodeIds[0];
+    const from = fromId ? this.nodeById(fromId) : undefined;
+    if (!from) {
+      return [];
+    }
+    return this.level.nodes
+      .filter((node) => node.id !== from.id && !this.links.some((link) => link.fromId === from.id && link.toId === node.id))
+      .sort((a, b) => Math.hypot(a.x - from.x, a.y - from.y) - Math.hypot(b.x - from.x, b.y - from.y))
+      .slice(0, 2)
+      .map((node) => ({ fromId: from.id, toId: node.id, message: `Try linking ${from.label} to ${node.label}` }));
+  }
+
+  private reachableFromSource(): Set<number> {
+    const seen = new Set<number>();
+    const queue = [this.level.sourceId];
+    while (queue.length > 0) {
+      const nodeId = queue.shift();
+      if (nodeId === undefined || seen.has(nodeId)) {
+        continue;
+      }
+      seen.add(nodeId);
+      for (const link of this.outgoingLinks(nodeId).filter((candidate) => !candidate.temporary)) {
+        queue.push(link.toId);
+      }
+    }
+    return seen;
+  }
+
+  private hasReachableLoop(): boolean {
+    const reachable = this.reachableFromSource();
+    const visiting = new Set<number>();
+    const visited = new Set<number>();
+    const visit = (nodeId: number): boolean => {
+      if (!reachable.has(nodeId)) {
+        return false;
+      }
+      if (visiting.has(nodeId)) {
+        return true;
+      }
+      if (visited.has(nodeId)) {
+        return false;
+      }
+      visiting.add(nodeId);
+      for (const link of this.outgoingLinks(nodeId).filter((candidate) => !candidate.temporary)) {
+        if (visit(link.toId)) {
+          return true;
+        }
+      }
+      visiting.delete(nodeId);
+      visited.add(nodeId);
+      return false;
+    };
+    return visit(this.level.sourceId);
+  }
+
+  private arrivalReadiness(nodeId: number): 'perfect' | 'soon' | 'early' | 'late' {
+    for (const pulse of this.pulses) {
+      if (pulse.nextNodeId === nodeId) {
+        if (pulse.progress >= 0.78) {
+          return 'perfect';
+        }
+        if (pulse.progress >= 0.42) {
+          return 'soon';
+        }
+        return 'early';
+      }
+      if (pulse.currentNodeId === nodeId) {
+        return 'late';
+      }
+    }
+    return 'early';
+  }
+
   private updateHash(): void {
     const data = [
       this.phase,
@@ -594,8 +1070,10 @@ export class PulseSimulation {
       this.score,
       Math.round(this.darkEnergy * 10),
       this.multiplier,
+      this.tutorialStep,
+      this.level.nodes.map((node) => `${node.id}:${node.primed ? 1 : 0}:${node.delayLevel}:${node.splitterPriority}`).join('|'),
       this.links.map((link) => `${link.fromId}>${link.toId}:${link.temporary ? Math.round(link.expiresMs - link.ageMs) : 0}`).join('|'),
-      this.pulses.map((pulse) => `${pulse.currentNodeId}>${pulse.nextNodeId ?? 0}:${Math.round(pulse.progress * 1000)}:${pulse.delayMs}`).join('|')
+      this.pulses.map((pulse) => `${pulse.currentNodeId}>${pulse.nextNodeId ?? 0}:${Math.round(pulse.progress * 1000)}:${Math.round(pulse.delayMs)}`).join('|')
     ].join(';');
     let hash = 2166136261;
     for (let index = 0; index < data.length; index += 1) {
@@ -620,4 +1098,10 @@ function multiplierForChain(chainLength: number): number {
     return 2;
   }
   return 1;
+}
+
+function splitterOrder(a: PulseLink, b: PulseLink, priority: number): number {
+  const aValue = (a.toId + priority * 7) % 13;
+  const bValue = (b.toId + priority * 7) % 13;
+  return aValue - bValue;
 }
