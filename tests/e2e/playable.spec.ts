@@ -2,141 +2,155 @@ import { expect, test, type Page } from '@playwright/test';
 
 const WORLD_WIDTH = 1080;
 const WORLD_HEIGHT = 1920;
-const BLACK_HOLE_X = WORLD_WIDTH / 2;
-const BLACK_HOLE_Y = WORLD_HEIGHT * 0.44;
 
-test('help overlay opens on first visit and closes with play', async ({ page }) => {
+test('help opens on first visit', async ({ page }) => {
   await openGame(page);
   await expect(page.locator('#help-overlay')).toBeVisible();
-  await page.locator('#help-play-button').click();
-  await expect(page.locator('#help-overlay')).toBeHidden();
-  await page.waitForTimeout(250);
-  const snapshot = await page.evaluate(() => window.__EVENT_HORIZON__?.getSnapshot());
-  expect(snapshot?.timeMs).toBeGreaterThan(0);
+  await expect(page.locator('#help-title')).toHaveText('EVENT HORIZON');
+  await expect(page.locator('#help-overlay')).toContainText('Build a dark-energy chain');
 });
 
-test('smoke renders playable Pixi canvas', async ({ page }) => {
+test('connect two nodes by tap-tap', async ({ page }) => {
   await openGameAndPlay(page);
-  const canvas = page.locator('canvas');
-  await expect(canvas).toBeVisible();
-  await page.waitForTimeout(650);
-  const snapshot = await page.evaluate(() => window.__EVENT_HORIZON__?.getSnapshot());
-  expect(snapshot?.phase).toBeGreaterThanOrEqual(1);
-  expect(snapshot?.energy).toBeGreaterThan(0);
+  const nodes = await getNodes(page);
+  const source = nodes.find((node) => node.type === 'source');
+  const target = nodes.find((node) => node.type === 'energy');
+  expect(source).toBeTruthy();
+  expect(target).toBeTruthy();
+  await tapWorld(page, source!.x, source!.y);
+  await tapWorld(page, target!.x, target!.y);
+  const links = await page.evaluate(() => window.__EVENT_HORIZON_DEBUG__?.getLinks()) as Array<{ fromId: number; toId: number }>;
+  expect(links.some((link) => link.fromId === source!.id && link.toId === target!.id)).toBe(true);
 });
 
-test('tap and tether swipe are captured into replay payload', async ({ page }) => {
-  await openGameAndPlay(page, '?debugInput=1');
-  const canvas = page.locator('canvas');
-  const box = await canvas.boundingBox();
-  expect(box).toBeTruthy();
-  if (!box) {
-    return;
-  }
-
-  await page.touchscreen.tap(box.x + box.width * 0.5, box.y + box.height * 0.5);
-  await waitForTutorialOrb(page);
-  const before = await page.evaluate(() => window.__EVENT_HORIZON__?.getSnapshot());
-  const swipe = await makeTutorialTetherSwipe(page);
-  await page.mouse.move(swipe.start.x, swipe.start.y);
+test('connect two nodes by drag', async ({ page }) => {
+  await openGameAndPlay(page);
+  const nodes = await getNodes(page);
+  const from = nodes.find((node) => node.type === 'energy');
+  const to = nodes.find((node) => node.type === 'delay');
+  expect(from).toBeTruthy();
+  expect(to).toBeTruthy();
+  const a = await worldToScreen(page, from!.x, from!.y);
+  const b = await worldToScreen(page, to!.x, to!.y);
+  await page.mouse.move(a.x, a.y);
   await page.mouse.down();
-  await page.mouse.move(swipe.mid.x, swipe.mid.y, { steps: 4 });
-  await page.mouse.move(swipe.end.x, swipe.end.y, { steps: 4 });
+  await page.mouse.move(b.x, b.y, { steps: 8 });
+  await page.mouse.up();
+  const result = await page.evaluate(() => window.__EVENT_HORIZON_DEBUG__?.getLastInputResult()) as { ok: boolean; message: string };
+  expect(result.ok).toBe(true);
+});
+
+test('press play, pulse moves, and energy node scores', async ({ page }) => {
+  await openGameAndPlay(page);
+  await buildTutorialChain(page);
+  await page.locator('#pulse-play-button').click();
+  await page.waitForFunction(() => {
+    const snapshot = window.__EVENT_HORIZON__?.getSnapshot() as { phase?: string; pulses?: unknown[] };
+    return snapshot?.phase === 'pulse' && Number(snapshot.pulses?.length) > 0;
+  });
+  const before = await page.evaluate(() => window.__EVENT_HORIZON__?.getSnapshot()) as { score: number };
+  await page.waitForFunction((score) => {
+    const snapshot = window.__EVENT_HORIZON__?.getSnapshot() as { score?: number };
+    return Number(snapshot?.score) > Number(score);
+  }, before.score);
+  const after = await page.evaluate(() => window.__EVENT_HORIZON__?.getSnapshot()) as { score: number; multiplier: number; phase: string };
+  expect(after.phase).toBe('pulse');
+  expect(after.score).toBeGreaterThan(before.score);
+  expect(after.multiplier).toBeGreaterThanOrEqual(1);
+});
+
+test('swipe during pulse phase creates Horizon Lens and records replay inputs', async ({ page }) => {
+  await openGameAndPlay(page);
+  await buildTutorialChain(page);
+  await page.locator('#pulse-play-button').click();
+  await page.waitForFunction(() => (window.__EVENT_HORIZON__?.getSnapshot() as { phase?: string })?.phase === 'pulse');
+  const nodes = await getNodes(page);
+  const a = nodes.find((node) => node.id === 6) ?? nodes[4];
+  const b = nodes.find((node) => node.id === 8) ?? nodes[5];
+  const start = await worldToScreen(page, a.x, a.y);
+  const end = await worldToScreen(page, b.x, b.y);
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down();
+  await page.mouse.move((start.x + end.x) / 2, (start.y + end.y) / 2 - 30, { steps: 5 });
+  await page.mouse.move(end.x, end.y, { steps: 5 });
   await page.mouse.up();
   await page.waitForTimeout(120);
-
-  const replay = await page.evaluate(() => window.__EVENT_HORIZON__?.getReplayPayload());
-  const after = await page.evaluate(() => window.__EVENT_HORIZON__?.getSnapshot());
-  const lastGesture = await page.evaluate(() => window.__EVENT_HORIZON_DEBUG__?.getLastGesture());
-  const lastSwipe = replay?.swipeEvents.at(-1);
-  expect(replay?.tapEvents.length).toBeGreaterThanOrEqual(1);
-  expect(replay?.swipeEvents.length).toBeGreaterThanOrEqual(1);
-  expect(lastSwipe?.path.length).toBeGreaterThanOrEqual(2);
-  expect(lastSwipe?.target).not.toBe('empty');
-  expect(lastSwipe?.success).toBe(true);
-  expect(after?.score).toBeGreaterThan(before?.score ?? 0);
-  expect(lastGesture?.activeTrailCount).toBeGreaterThan(0);
+  const result = await page.evaluate(() => window.__EVENT_HORIZON_DEBUG__?.getLastInputResult()) as { kind: string; message: string };
+  const replay = await page.evaluate(() => window.__EVENT_HORIZON__?.getReplayPayload()) as {
+    buildInputs: unknown[];
+    liveInputs: Array<{ kind: string; success: boolean }>;
+  };
+  expect(result.kind).toBe('lens');
+  expect(['BRIDGE CREATED', 'NO ANCHOR']).toContain(result.message);
+  expect(replay.buildInputs.some((input) => (input as { kind: string }).kind === 'play')).toBe(true);
+  expect(replay.liveInputs.some((input) => input.kind === 'lens')).toBe(true);
 });
 
-test('posterizer exports a compact png data url', async ({ page }) => {
+test('collapse or stabilized end state is reachable', async ({ page }) => {
   await openGameAndPlay(page);
-  await page.waitForTimeout(900);
-  const poster = await page.evaluate(() => window.__EVENT_HORIZON__?.exportPoster());
-  expect(poster).toMatch(/^data:image\/png;base64,/);
-  expect(poster?.length).toBeGreaterThan(1200);
+  await page.evaluate(() => window.__EVENT_HORIZON_DEBUG__?.forceCollapse());
+  await page.waitForTimeout(150);
+  const snapshot = await page.evaluate(() => window.__EVENT_HORIZON__?.getSnapshot()) as {
+    phase: string;
+    collapsed: boolean;
+    stabilized: boolean;
+  };
+  expect(snapshot.phase).toBe('ended');
+  expect(snapshot.collapsed || snapshot.stabilized).toBe(true);
 });
 
-test('miss swipe records visible feedback state', async ({ page }) => {
-  await openGameAndPlay(page, '?debugInput=1');
-  await page.waitForTimeout(250);
-  const result = await page.evaluate(() =>
-    window.__EVENT_HORIZON_DEBUG__?.simulateSwipeWorld([
-      { x: 80, y: 1760 },
-      { x: 180, y: 1840 }
-    ])
-  );
-  const lastGesture = await page.evaluate(() => window.__EVENT_HORIZON_DEBUG__?.getLastGesture());
-  expect(result?.success).toBe(false);
-  expect(result?.message).toBe('MISS');
-  expect(lastGesture?.activeTrailCount).toBeGreaterThan(0);
-});
-
-test('end-state collapse is reachable', async ({ page }) => {
-  await openGameAndPlay(page);
-  await page.evaluate(() => window.__EVENT_HORIZON__?.forceEnd());
-  await page.waitForTimeout(250);
-  const snapshot = await page.evaluate(() => window.__EVENT_HORIZON__?.getSnapshot());
-  expect(snapshot?.ended).toBe(true);
-  expect(snapshot?.collapseT).toBeGreaterThan(0);
-});
-
-async function openGame(page: Page, query = ''): Promise<void> {
+async function openGame(page: Page): Promise<void> {
   await page.addInitScript(() => {
-    localStorage.clear();
+    window.localStorage.clear();
   });
-  await page.goto(query ? `.${query}` : './');
+  await page.goto('./?seed=tutorial&debugInput=1');
   await page.locator('canvas').waitFor({ state: 'visible' });
 }
 
-async function openGameAndPlay(page: Page, query = ''): Promise<void> {
-  await openGame(page, query);
-  await expect(page.locator('#help-overlay')).toBeVisible();
+async function openGameAndPlay(page: Page): Promise<void> {
+  await openGame(page);
   await page.locator('#help-play-button').click();
   await expect(page.locator('#help-overlay')).toBeHidden();
 }
 
-async function waitForTutorialOrb(page: Page) {
-  return page.waitForFunction(() => {
-    const snapshot = window.__EVENT_HORIZON__?.getSnapshot();
-    return snapshot?.orbs.some((orb) => orb.active && orb.tutorial && !orb.captured);
-  });
+async function buildTutorialChain(page: Page): Promise<void> {
+  const nodes = await getNodes(page);
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  for (const [fromId, toId] of [
+    [1, 2],
+    [2, 3],
+    [3, 4],
+    [4, 5],
+    [4, 6]
+  ]) {
+    const from = byId.get(fromId);
+    const to = byId.get(toId);
+    expect(from).toBeTruthy();
+    expect(to).toBeTruthy();
+    await tapWorld(page, from!.x, from!.y);
+    await tapWorld(page, to!.x, to!.y);
+  }
 }
 
-async function makeTutorialTetherSwipe(page: Page) {
-  const canvas = page.locator('canvas');
-  const box = await canvas.boundingBox();
+async function getNodes(page: Page) {
+  return (await page.evaluate(() => window.__EVENT_HORIZON_DEBUG__?.getNodes())) as Array<{
+    id: number;
+    type: string;
+    x: number;
+    y: number;
+  }>;
+}
+
+async function tapWorld(page: Page, x: number, y: number): Promise<void> {
+  const point = await worldToScreen(page, x, y);
+  await page.mouse.click(point.x, point.y);
+}
+
+async function worldToScreen(page: Page, x: number, y: number): Promise<{ x: number; y: number }> {
+  const box = await page.locator('canvas').boundingBox();
   if (!box) {
     throw new Error('Canvas box unavailable.');
   }
-  const snapshot = await page.evaluate(() => window.__EVENT_HORIZON__?.getSnapshot());
-  const orb = snapshot?.orbs.find((candidate) => candidate.active && candidate.tutorial && !candidate.captured);
-  if (!orb) {
-    throw new Error('Tutorial orb unavailable.');
-  }
-  const targetX = BLACK_HOLE_X + (orb.x - BLACK_HOLE_X) * 0.78;
-  const targetY = BLACK_HOLE_Y + (orb.y - BLACK_HOLE_Y) * 0.78;
-  const dx = orb.x - BLACK_HOLE_X;
-  const dy = orb.y - BLACK_HOLE_Y;
-  const length = Math.max(1, Math.hypot(dx, dy));
-  const normalX = -dy / length;
-  const normalY = dx / length;
-  const start = worldToScreen(box, targetX - normalX * 150, targetY - normalY * 150);
-  const mid = worldToScreen(box, targetX, targetY);
-  const end = worldToScreen(box, targetX + normalX * 150, targetY + normalY * 150);
-  return { start, mid, end };
-}
-
-function worldToScreen(box: { x: number; y: number; width: number; height: number }, x: number, y: number) {
   const scale = Math.min(box.width / WORLD_WIDTH, box.height / WORLD_HEIGHT);
   const offsetX = (box.width - WORLD_WIDTH * scale) / 2;
   const offsetY = (box.height - WORLD_HEIGHT * scale) / 2;

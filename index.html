@@ -17,6 +17,11 @@
           <button id="help-button" type="button" aria-label="How to play" title="How to play">?</button>
           <a id="poster-link" download="event-horizon-poster.png" aria-label="Download share poster">⇩</a>
         </div>
+        <div id="pulse-controls" aria-live="polite">
+          <button id="pulse-undo-button" type="button">Undo</button>
+          <button id="pulse-clear-button" type="button">Clear</button>
+          <button id="pulse-play-button" type="button">Play</button>
+        </div>
         <section id="help-overlay" aria-modal="true" role="dialog" aria-labelledby="help-title" hidden>
           <div id="help-panel">
             <div class="help-example" aria-hidden="true">
@@ -26,15 +31,16 @@
               <span class="help-swipe"></span>
             </div>
             <h1 id="help-title">EVENT HORIZON</h1>
-            <p>Hold back the collapse of the galaxy.</p>
+            <p>Build a dark-energy chain. Then press Play.</p>
             <ol>
-              <li>Swipe through glowing tethers to harvest dark-energy orbs.</li>
-              <li>Tap an orb to stabilize it briefly.</li>
-              <li>Tap streaking stars for a bonus.</li>
-              <li>Keep the Dark Energy meter alive.</li>
-              <li>When the meter empties, the galaxy collapses.</li>
+              <li>Connect nodes with gravitational links.</li>
+              <li>Press Play to launch the stabilizing pulse.</li>
+              <li>Energy nodes refill the Collapse Meter.</li>
+              <li>Long chains and loops build multipliers.</li>
+              <li>During playback, swipe to create a temporary Horizon Lens bridge.</li>
+              <li>Keep the galaxy alive as long as you can.</li>
             </ol>
-            <p>The black hole always wins.<br />Your job is to delay it.</p>
+            <p>The black hole always wins.<br />Your chain buys the galaxy time.</p>
             <button id="help-play-button" type="button">PLAY</button>
           </div>
         </section>

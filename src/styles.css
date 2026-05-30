@@ -76,13 +76,33 @@ a {
   gap: 8px;
 }
 
+#pulse-controls {
+  position: fixed;
+  right: max(14px, env(safe-area-inset-right));
+  bottom: max(22px, env(safe-area-inset-bottom));
+  left: max(14px, env(safe-area-inset-left));
+  z-index: 3;
+  display: grid;
+  grid-template-columns: 1fr 1fr 1.45fr;
+  gap: 10px;
+  pointer-events: auto;
+}
+
+#pulse-controls[hidden] {
+  display: none;
+}
+
+#pulse-controls[data-phase="pulse"],
+#pulse-controls[data-phase="ended"] {
+  grid-template-columns: 1fr 1fr;
+}
+
 #restart-button,
 #share-button,
 #help-button,
-#poster-link {
+#poster-link,
+#pulse-controls button {
   display: grid;
-  width: 40px;
-  height: 40px;
   place-items: center;
   border: 1px solid rgba(179, 226, 255, 0.26);
   border-radius: 8px;
@@ -93,6 +113,31 @@ a {
   text-decoration: none;
   backdrop-filter: blur(8px);
   touch-action: manipulation;
+}
+
+#restart-button,
+#share-button,
+#help-button,
+#poster-link {
+  width: 40px;
+  height: 40px;
+}
+
+#pulse-controls button {
+  min-height: 48px;
+  color: #f7fbff;
+  font-size: 14px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+#pulse-controls button[hidden] {
+  display: none;
+}
+
+#pulse-play-button {
+  background: linear-gradient(90deg, rgba(103, 244, 255, 0.9), rgba(210, 103, 255, 0.9));
+  color: #061120;
 }
 
 #poster-link:not([href]) {

@@ -13,18 +13,57 @@ const replay = {
   phaseTransitions: []
 };
 
-const response = await scoreSubmit(
-  new Request('https://event-horizon.test/.netlify/functions/score-submit', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(replay)
-  })
-);
+const pulseReplay = {
+  version: 1,
+  mode: 'pulse-chain',
+  seed: 'tutorial',
+  startedAt: 1780185600000,
+  buildInputs: [
+    { t: 0, kind: 'link', fromId: 1, toId: 2 },
+    { t: 300, kind: 'link', fromId: 2, toId: 3 },
+    { t: 620, kind: 'play' }
+  ],
+  liveInputs: [
+    {
+      t: 1600,
+      kind: 'lens',
+      path: [
+        { x: 835, y: 1215, t: 0 },
+        { x: 700, y: 1410, t: 120 }
+      ],
+      fromId: 6,
+      toId: 8,
+      success: true
+    }
+  ],
+  result: {
+    score: 620,
+    survivalMs: 12120,
+    maxMultiplier: 2,
+    loopsCompleted: 1,
+    linksUsed: 5,
+    stabilized: false,
+    collapsed: false
+  },
+  stepHash: '04ce9b1a'
+};
 
-const body = await response.json();
-if (response.status !== 200 || !body.ok || body.score !== replay.score) {
-  console.error(JSON.stringify({ status: response.status, body }, null, 2));
-  process.exit(1);
+const results = [];
+for (const payload of [replay, pulseReplay]) {
+  const response = await scoreSubmit(
+    new Request('https://event-horizon.test/.netlify/functions/score-submit', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload)
+    })
+  );
+  const body = await response.json();
+  const expectedScore = payload.mode === 'pulse-chain' ? payload.result.score : payload.score;
+  if (response.status !== 200 || !body.ok || body.score !== expectedScore) {
+    console.error(JSON.stringify({ status: response.status, body }, null, 2));
+    process.exit(1);
+  }
+  results.push({ status: response.status, body });
 }
 
-console.log(JSON.stringify({ status: response.status, body }, null, 2));
+console.log(JSON.stringify(results, null, 2));

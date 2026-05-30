@@ -29,8 +29,8 @@ export default async function scoreSubmit(request) {
   return json({
     ok: true,
     acceptedAt: new Date().toISOString(),
-    score: payload.score,
-    survivalMs: payload.survivalMs
+    score: payload.mode === 'pulse-chain' ? payload.result.score : payload.score,
+    survivalMs: payload.mode === 'pulse-chain' ? payload.result.survivalMs : payload.survivalMs
   });
 }
 
@@ -47,6 +47,24 @@ function validateReplay(payload) {
   }
   if (payload.version !== 1) {
     return 'version_required';
+  }
+  if (payload.mode === 'pulse-chain') {
+    if (typeof payload.seed !== 'string' || payload.seed.length < 3) {
+      return 'seed_required';
+    }
+    if (!Number.isFinite(payload.startedAt)) {
+      return 'started_at_required';
+    }
+    if (!Array.isArray(payload.buildInputs) || !Array.isArray(payload.liveInputs)) {
+      return 'inputs_required';
+    }
+    if (!payload.result || !Number.isFinite(payload.result.score) || !Number.isFinite(payload.result.survivalMs)) {
+      return 'result_required';
+    }
+    if (typeof payload.stepHash !== 'string') {
+      return 'hash_required';
+    }
+    return '';
   }
   if (typeof payload.seed !== 'string' || payload.seed.length < 3) {
     return 'seed_required';

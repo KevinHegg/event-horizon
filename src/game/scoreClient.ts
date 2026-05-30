@@ -1,4 +1,5 @@
 import { SCORE_ENDPOINT } from './constants';
+import type { PulseReplayPayload } from './pulse/PulseTypes';
 import type { ReplayPayload } from './types';
 
 export interface ScoreSubmitResult {
@@ -8,7 +9,7 @@ export interface ScoreSubmitResult {
 }
 
 export async function submitScore(
-  payload: ReplayPayload,
+  payload: ReplayPayload | PulseReplayPayload,
   endpoint = SCORE_ENDPOINT
 ): Promise<ScoreSubmitResult> {
   try {
