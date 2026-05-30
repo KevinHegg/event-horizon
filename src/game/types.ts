@@ -7,13 +7,28 @@ export interface TapEvent {
   target: 'orb' | 'flyby' | 'arm' | 'empty';
 }
 
+export interface RecordedGesturePoint {
+  x: number;
+  y: number;
+  t: number;
+}
+
+export type SwipeTarget = 'orb' | 'tether' | 'arm' | 'flyby' | 'empty';
+export type SwipeMessage = 'HARVEST' | 'PERFECT' | 'MISS' | 'CANCELED';
+
 export interface SwipeEvent {
   t: number;
   x1: number;
   y1: number;
   x2: number;
   y2: number;
-  target: 'orb' | 'empty';
+  target: SwipeTarget;
+  success: boolean;
+  orbId?: number;
+  scoreDelta?: number;
+  energyDelta?: number;
+  message: SwipeMessage;
+  path: RecordedGesturePoint[];
 }
 
 export interface PhaseTransition {
@@ -38,6 +53,7 @@ export interface ReplayPayload {
 export interface OrbState {
   active: boolean;
   captured: boolean;
+  tutorial: boolean;
   id: number;
   x: number;
   y: number;
@@ -74,6 +90,7 @@ export interface SimulationSnapshot {
   energyCaptured: number;
   streak: number;
   maxStreak: number;
+  harvestCount: number;
   phase: GamePhase;
   ended: boolean;
   collapseT: number;

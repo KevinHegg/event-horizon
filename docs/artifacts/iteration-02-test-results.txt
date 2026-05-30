@@ -1,0 +1,31 @@
+Event Horizon iteration 02 verification
+Date: 2026-05-30T02:21:14Z
+
+$ npm run build
+passed: TypeScript noEmit and Vite production build completed.
+
+$ npm run lint
+passed: ESLint completed with no findings.
+
+$ npm run test
+passed: 2 test files, 9 unit tests.
+- score-submit.test.ts: 2 passed
+- simulation.test.ts: 7 passed, including tether hit detection, miss behavior, path simplification, deterministic replay, and legacy simple swipe.
+
+$ npm run test:e2e
+passed: 6 mobile Chrome Playwright tests.
+- help overlay opens on first visit and closes with play
+- smoke renders playable Pixi canvas
+- tap and tether swipe are captured into replay payload
+- posterizer exports a compact png data url
+- miss swipe records visible feedback state
+- end-state collapse is reachable
+
+$ npm run score:test
+passed: status 200, ok true, score 1280, survivalMs 67421.
+
+$ npm run capture:iteration-02
+passed: captured iteration-02-help-mobile.jpg, iteration-02-gameplay-mobile.jpg, iteration-02-swipe-trail-mobile.jpg, iteration-02-collapse-mobile.jpg.
+
+Manual physical phone test
+not run in this Codex session; Playwright mobile simulation passed.

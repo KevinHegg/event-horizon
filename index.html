@@ -14,8 +14,30 @@
         <div id="status-layer" aria-live="polite">
           <button id="restart-button" type="button" aria-label="Restart run" title="Restart run">↻</button>
           <button id="share-button" type="button" aria-label="Create share poster" title="Create share poster">⇪</button>
+          <button id="help-button" type="button" aria-label="How to play" title="How to play">?</button>
           <a id="poster-link" download="event-horizon-poster.png" aria-label="Download share poster">⇩</a>
         </div>
+        <section id="help-overlay" aria-modal="true" role="dialog" aria-labelledby="help-title" hidden>
+          <div id="help-panel">
+            <div class="help-example" aria-hidden="true">
+              <span class="help-hole"></span>
+              <span class="help-tether"></span>
+              <span class="help-orb"></span>
+              <span class="help-swipe"></span>
+            </div>
+            <h1 id="help-title">EVENT HORIZON</h1>
+            <p>Hold back the collapse of the galaxy.</p>
+            <ol>
+              <li>Swipe through glowing tethers to harvest dark-energy orbs.</li>
+              <li>Tap an orb to stabilize it briefly.</li>
+              <li>Tap streaking stars for a bonus.</li>
+              <li>Keep the Dark Energy meter alive.</li>
+              <li>When the meter empties, the galaxy collapses.</li>
+            </ol>
+            <p>The black hole always wins.<br />Your job is to delay it.</p>
+            <button id="help-play-button" type="button">PLAY</button>
+          </div>
+        </section>
       </div>
     </main>
     <script type="module" src="/src/main.ts"></script>

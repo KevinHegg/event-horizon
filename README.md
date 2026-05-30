@@ -8,8 +8,9 @@ Event Horizon is a mobile-first, one-thumb casual survival prototype about delay
 - PixiJS canvas renderer with WebGL preference
 - Fixed `60 Hz` simulation step decoupled from render frames
 - Seeded `mulberry32` RNG and replay payloads from seed + input timings
-- Tap and swipe input recording
-- Dark-energy orbs, tether capture, flyby bonuses, and shadow-arm hazards
+- Path-based tap/swipe input recording with mobile Pointer Events and TouchEvent fallback
+- Dark-energy orbs, tether-based swipe capture, flyby bonuses, and shadow-arm hazards
+- First-run help overlay, tutorial ramp, visible swipe trails, hit/miss feedback, and debug hooks
 - Phase-based black-hole visibility and gravity pressure
 - Bottom dark-energy meter, score/time HUD, and collapse end animation
 - Share poster export from three captured gameplay frames
@@ -33,6 +34,8 @@ npm run lint
 npm run test
 npm run test:e2e
 npm run score:test
+npm run capture:iteration-02
+npm run report:iteration-02
 npm run report:pdf
 ```
 

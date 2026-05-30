@@ -12,7 +12,9 @@
     "lint": "eslint .",
     "score:test": "node scripts/test-score-submit.mjs",
     "capture:artifacts": "node scripts/capture-artifacts.mjs",
-    "report:pdf": "node scripts/generate-report-pdf.mjs"
+    "capture:iteration-02": "node scripts/capture-iteration-02-artifacts.mjs",
+    "report:pdf": "node scripts/generate-report-pdf.mjs",
+    "report:iteration-02": "node scripts/generate-iteration-02-report.mjs"
   },
   "dependencies": {
     "pixi.js": "8.18.1"
