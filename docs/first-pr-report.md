@@ -72,7 +72,7 @@ AGENTS.md
 README.md
 docs/artifacts/collapse-mobile.jpg
 docs/artifacts/gameplay-mobile.jpg
-docs/artifacts/share-poster.png
+docs/artifacts/share-poster.jpg
 docs/first-pr-report.md
 docs/pr-body.md
 eslint.config.js
@@ -132,7 +132,7 @@ vite.config.ts
 - `scripts/capture-artifacts.mjs`: captures mobile gameplay, poster, and collapse images.
 - `scripts/test-score-submit.mjs`: standalone endpoint sanity test.
 - `scripts/generate-report-pdf.mjs`: generates the requested PDF artifact.
-- `docs/artifacts/*`: screenshots and poster image from the actual build.
+- `docs/artifacts/*`: compressed screenshots and poster image from the actual build.
 - `docs/pr-body.md`: PR description source.
 
 ## Major Code Snippets

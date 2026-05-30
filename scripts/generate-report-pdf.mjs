@@ -9,7 +9,7 @@ const reportPath = new URL('first-pr-report.md', docsDir);
 const pdfPath = new URL('first-pr-report.pdf', docsDir);
 const artifacts = [
   new URL('artifacts/gameplay-mobile.jpg', docsDir),
-  new URL('artifacts/share-poster.png', docsDir),
+  new URL('artifacts/share-poster.jpg', docsDir),
   new URL('artifacts/collapse-mobile.jpg', docsDir)
 ];
 
@@ -24,10 +24,9 @@ const diffTextRaw = runGit([
   '.',
   ':(exclude)package-lock.json',
   ':(exclude)docs/artifacts/*.jpg',
-  ':(exclude)docs/artifacts/*.png',
   ':(exclude)docs/first-pr-report.pdf'
 ]);
-const maxDiffChars = 70000;
+const maxDiffChars = 8000;
 const diffText =
   diffTextRaw.length > maxDiffChars
     ? `${diffTextRaw.slice(0, maxDiffChars)}\n\n[Diff truncated for PDF practicality. package-lock and binary images are represented in the stat above.]\n`
@@ -133,7 +132,7 @@ function addScreenshots(document) {
     document.font('Helvetica-Bold').fontSize(10).text(labels[index]);
     document.moveDown(0.2);
     document.image(image.pathname, {
-      fit: index === 1 ? [220, 300] : [180, 300],
+      fit: index === 1 ? [160, 230] : [130, 230],
       align: 'center'
     });
     document.moveDown(0.7);

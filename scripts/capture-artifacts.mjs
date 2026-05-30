@@ -6,8 +6,8 @@ await mkdir(outputDir, { recursive: true });
 
 const browser = await chromium.launch({ channel: 'chrome' });
 const page = await browser.newPage({
-  viewport: { width: 390, height: 844 },
-  deviceScaleFactor: 2,
+  viewport: { width: 260, height: 563 },
+  deviceScaleFactor: 1,
   isMobile: true,
   hasTouch: true
 });
@@ -18,7 +18,7 @@ await page.waitForTimeout(1300);
 await page.screenshot({
   path: new URL('gameplay-mobile.jpg', outputDir).pathname,
   type: 'jpeg',
-  quality: 58,
+  quality: 38,
   fullPage: false
 });
 
@@ -38,18 +38,35 @@ const posterDataUrl = await page.evaluate(() => window.__EVENT_HORIZON__?.export
 if (!posterDataUrl || !posterDataUrl.startsWith('data:image/png;base64,')) {
   throw new Error('Poster export failed.');
 }
-await writeFile(new URL('share-poster.png', outputDir), Buffer.from(posterDataUrl.split(',')[1], 'base64'));
+const posterJpeg = await page.evaluate(async (dataUrl) => {
+  const image = await new Promise((resolve, reject) => {
+    const candidate = new Image();
+    candidate.onload = () => resolve(candidate);
+    candidate.onerror = () => reject(new Error('Unable to load poster image.'));
+    candidate.src = dataUrl;
+  });
+  const canvas = document.createElement('canvas');
+  canvas.width = 270;
+  canvas.height = 480;
+  const context = canvas.getContext('2d');
+  if (!context) {
+    throw new Error('Unable to create poster compression canvas.');
+  }
+  context.drawImage(image, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL('image/jpeg', 0.42);
+}, posterDataUrl);
+await writeFile(new URL('share-poster.jpg', outputDir), Buffer.from(posterJpeg.split(',')[1], 'base64'));
 
 await page.evaluate(() => window.__EVENT_HORIZON__?.forceEnd());
 await page.waitForTimeout(950);
 await page.screenshot({
   path: new URL('collapse-mobile.jpg', outputDir).pathname,
   type: 'jpeg',
-  quality: 56,
+  quality: 36,
   fullPage: false
 });
 
 await browser.close();
 console.log('Captured docs/artifacts/gameplay-mobile.jpg');
-console.log('Captured docs/artifacts/share-poster.png');
+console.log('Captured docs/artifacts/share-poster.jpg');
 console.log('Captured docs/artifacts/collapse-mobile.jpg');

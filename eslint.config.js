@@ -30,7 +30,9 @@ export default tseslint.config(
         Request: 'readonly',
         Response: 'readonly',
         URL: 'readonly',
-        window: 'readonly'
+        window: 'readonly',
+        document: 'readonly',
+        Image: 'readonly'
       }
     }
   }
