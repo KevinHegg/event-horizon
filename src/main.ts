@@ -18,9 +18,12 @@ const root = document.querySelector<HTMLDivElement>('#game-root');
 const restartButton = document.querySelector<HTMLButtonElement>('#restart-button');
 const shareButton = document.querySelector<HTMLButtonElement>('#share-button');
 const helpButton = document.querySelector<HTMLButtonElement>('#help-button');
+const legendButton = document.querySelector<HTMLButtonElement>('#legend-button');
 const helpOverlay = document.querySelector<HTMLElement>('#help-overlay');
 const helpPlayButton = document.querySelector<HTMLButtonElement>('#help-play-button');
 const helpSkipButton = document.querySelector<HTMLButtonElement>('#help-skip-button');
+const legendOverlay = document.querySelector<HTMLElement>('#legend-overlay');
+const legendCloseButton = document.querySelector<HTMLButtonElement>('#legend-close-button');
 const posterLink = document.querySelector<HTMLAnchorElement>('#poster-link');
 const pulseControls = document.querySelector<HTMLElement>('#pulse-controls');
 const pulseUndoButton = document.querySelector<HTMLButtonElement>('#pulse-undo-button');
@@ -32,9 +35,12 @@ if (
   !restartButton ||
   !shareButton ||
   !helpButton ||
+  !legendButton ||
   !helpOverlay ||
   !helpPlayButton ||
   !helpSkipButton ||
+  !legendOverlay ||
+  !legendCloseButton ||
   !posterLink ||
   !pulseControls ||
   !pulseUndoButton ||
@@ -47,7 +53,7 @@ if (
 const params = new URLSearchParams(window.location.search);
 const mode = params.get('mode') === 'legacy' ? 'legacy' : 'pulse-chain';
 const debugInput = params.get('debugInput') === '1';
-const seed = params.get('seed') ?? 'tutorial-001';
+const seed = params.get('seed') ?? 'tutorial-002';
 
 const game: EventHorizonRuntime =
   mode === 'legacy'
@@ -65,7 +71,7 @@ game.setInputDebug(debugInput);
 pulseControls.hidden = mode === 'legacy';
 let pulsePaused = false;
 
-const helpKey = mode === 'legacy' ? 'eventHorizon.helpSeen' : 'eventHorizon.iteration04HelpSeen';
+const helpKey = mode === 'legacy' ? 'eventHorizon.helpSeen' : 'eventHorizon.iteration05HelpSeen';
 
 const hasSeenHelp = (): boolean => {
   try {
@@ -88,6 +94,18 @@ const openHelp = (): void => {
   helpPlayButton.textContent = mode === 'legacy' ? 'PLAY' : 'START TUTORIAL';
   helpSkipButton.hidden = mode === 'legacy';
   game.setPaused(true);
+};
+
+const openLegend = (): void => {
+  legendOverlay.hidden = false;
+  game.setPaused(true);
+};
+
+const closeLegend = (): void => {
+  legendOverlay.hidden = true;
+  if (helpOverlay.hidden) {
+    game.setPaused(false);
+  }
 };
 
 const closeHelp = (startTutorial: boolean): void => {
@@ -116,6 +134,8 @@ restartButton.addEventListener('click', () => {
 });
 
 helpButton.addEventListener('click', openHelp);
+legendButton.addEventListener('click', openLegend);
+legendCloseButton.addEventListener('click', closeLegend);
 helpPlayButton.addEventListener('click', () => closeHelp(true));
 helpSkipButton.addEventListener('click', () => closeHelp(false));
 

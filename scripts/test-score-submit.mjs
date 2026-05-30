@@ -16,7 +16,7 @@ const replay = {
 const pulseReplay = {
   version: 1,
   mode: 'pulse-chain',
-  seed: 'tutorial-001',
+  seed: 'tutorial-002',
   startedAt: 1780185600000,
   buildInputs: [
     {
@@ -54,8 +54,14 @@ const pulseReplay = {
     linksUsed: 5,
     bestChainLength: 5,
     energyNodesHit: 2,
+    batteriesLit: 3,
+    batteriesRequired: 3,
+    loopClosed: true,
+    loopHoldMs: 4200,
+    primaryGoalComplete: true,
     stabilized: false,
-    collapsed: false
+    collapsed: false,
+    failureReason: ''
   },
   stepHash: '04ce9b1a'
 };

@@ -3,7 +3,16 @@ import type { WorldPoint } from '../gestures';
 export type PulseGamePhase = 'build' | 'pulse' | 'ended';
 export type PulseEndReason = 'collapsed' | 'stabilized' | 'pulse-died' | 'manual';
 export type PulseNodeType = 'source' | 'conduit' | 'energy' | 'delay' | 'splitter';
-export type TutorialStep = 'swipe-chain' | 'tap-splitter' | 'press-play' | 'stabilize' | 'lens' | 'loops' | 'complete' | 'skipped';
+export type TutorialStep =
+  | 'battery-goal'
+  | 'swipe-batteries'
+  | 'add-battery'
+  | 'close-loop'
+  | 'press-play'
+  | 'loop-alive'
+  | 'advanced'
+  | 'complete'
+  | 'skipped';
 export type NodeTapAction = 'select' | 'prime' | 'delay' | 'splitter' | 'stabilize' | 'none';
 
 export interface PulseNode extends WorldPoint {
@@ -15,6 +24,8 @@ export interface PulseNode extends WorldPoint {
   activationMs: number;
   scoreCooldownMs: number;
   primed: boolean;
+  lit: boolean;
+  required: boolean;
   delayLevel: 0 | 1 | 2;
   splitterPriority: number;
   stabilizedMs: number;
@@ -59,16 +70,38 @@ export interface HorizonLens {
 export interface ChainAnalysis {
   reachableEnergyNodes: number;
   totalEnergyNodes: number;
+  reachableBatteryNodes: number;
+  totalRequiredBatteries: number;
+  reachableBatteryIds: number[];
+  missingBatteryIds: number[];
   deadEndNodeIds: number[];
   hasLoop: boolean;
+  sourceLoopClosed: boolean;
+  allRequiredBatteriesReachable: boolean;
+  allRequiredBatteriesInLoop: boolean;
   linksUsed: number;
-  quality: 'Draw a chain' | 'Good start' | 'Hit more Energy nodes' | 'Dead end detected' | 'Loop possible' | 'Great loop';
+  quality:
+    | 'Start at SOURCE'
+    | 'Reach the Batteries'
+    | 'This chain misses a Battery'
+    | 'This chain has a dead end'
+    | 'Close the loop'
+    | 'Good chain'
+    | 'Great loop';
+  hint: string;
 }
 
 export interface SuggestedFix {
   fromId: number;
   toId: number;
   message: string;
+}
+
+export interface NodeInfoCard {
+  nodeId: number;
+  title: string;
+  body: string;
+  action: string;
 }
 
 export interface PulseLevel {
@@ -78,6 +111,7 @@ export interface PulseLevel {
   linkBudget: number;
   targetScore: number;
   targetSurvivalMs: number;
+  requiredBatteryIds: number[];
 }
 
 export type BuildInput =
@@ -113,8 +147,14 @@ export interface PulseResult {
   linksUsed: number;
   bestChainLength: number;
   energyNodesHit: number;
+  batteriesLit: number;
+  batteriesRequired: number;
+  loopClosed: boolean;
+  loopHoldMs: number;
+  primaryGoalComplete: boolean;
   stabilized: boolean;
   collapsed: boolean;
+  failureReason: string;
 }
 
 export interface PulseReplayPayload {
@@ -148,6 +188,12 @@ export interface PulseSnapshot {
   score: number;
   darkEnergy: number;
   collapseMeter: number;
+  batteriesLit: number;
+  batteriesRequired: number;
+  requiredBatteryIds: readonly number[];
+  loopClosed: boolean;
+  loopHoldMs: number;
+  primaryGoalComplete: boolean;
   multiplier: number;
   maxMultiplier: number;
   chainLength: number;
@@ -173,9 +219,11 @@ export interface PulseSnapshot {
   tutorialGhostPath: readonly WorldPoint[];
   chainAnalysis: ChainAnalysis;
   suggestedFixes: readonly SuggestedFix[];
+  nodeInfoCard?: NodeInfoCard;
   lastChainNodeIds: readonly number[];
   lastTapAction: NodeTapAction;
   deadEndNodeId?: number;
+  failureReason: string;
   lastInputResult: PulseInputResult;
   stepHash: string;
 }

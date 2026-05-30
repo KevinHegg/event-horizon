@@ -87,7 +87,7 @@ export class PulseInputController {
       this.lastResult = this.sim.removeLinkNear(point);
       return;
     }
-    if (snapshot.tutorialStep === 'tap-splitter' && node.type === 'splitter') {
+    if (snapshot.tutorialStep === 'advanced' && node.type === 'splitter') {
       this.lastResult = this.sim.tapNode(node.id);
       this.selectedNodeId = undefined;
       return;

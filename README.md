@@ -8,15 +8,15 @@ Event Horizon is a mobile-first cosmic chain-reaction game about delaying a gala
 - PixiJS canvas renderer with WebGL preference
 - Fixed `60 Hz` simulation step decoupled from render frames
 - Seeded `mulberry32` RNG and replay payloads from seed + input timings
-- Default Pulse Chain mode: connect Dark Energy Nodes, press Play, and watch a Stabilizing Pulse travel the network
+- Default Pulse Chain mode: light all Dark Energy Batteries, close the loop, and keep the Stabilizing Pulse alive
 - Swipe-through-node chain drawing, tap-tap link placement, and tap-based node tuning
-- Interactive `tutorial-001` first-run seed that teaches swipe chain, tap strategy, Play, stabilize taps, and Horizon Lens rescue
-- Energy, Delay, Splitter, Conduit, and Source nodes with scoring and multiplier rules
-- Energy nodes can be primed, Delay nodes cycle timing, and Splitters cycle output priority
+- Interactive `tutorial-002` first-run seed that teaches Battery objectives, loop closure, Play, and sector stabilization
+- Player-facing node jobs: Source, Battery, Relay, Capacitor, and Router
+- Battery nodes can be overcharged, Capacitors cycle timing, and Routers cycle output priority
 - Pulse-phase taps stabilize arriving nodes for score and dark-energy gain
 - Horizon Lens swipes during pulse playback create short-lived temporary bridges
 - Path-based input recording with mobile Pointer Events and TouchEvent fallback
-- First-run help overlay, tutorial hints, visible pulse/lens feedback, and debug hooks
+- First-run help overlay, node legend, node info cards, tutorial hints, visible pulse/lens feedback, and debug hooks
 - Bottom Collapse Meter, score/multiplier HUD, and stabilized/collapsed end states
 - Share poster export from three captured gameplay frames
 - Minimal Netlify score submit function that accepts legacy and Pulse Chain replay payloads
@@ -44,6 +44,8 @@ npm run capture:iteration-03
 npm run report:iteration-03
 npm run capture:iteration-04
 npm run report:iteration-04
+npm run capture:iteration-05
+npm run report:iteration-05
 npm run capture:iteration-02
 npm run report:iteration-02
 npm run report:pdf
@@ -96,7 +98,7 @@ npx netlify dev
 {
   "version": 1,
   "mode": "pulse-chain",
-  "seed": "tutorial",
+  "seed": "tutorial-002",
   "startedAt": 1780185600000,
   "buildInputs": [
     {
@@ -134,8 +136,14 @@ npx netlify dev
     "linksUsed": 5,
     "bestChainLength": 5,
     "energyNodesHit": 2,
-    "stabilized": false,
-    "collapsed": false
+    "batteriesLit": 3,
+    "batteriesRequired": 3,
+    "loopClosed": true,
+    "loopHoldMs": 4200,
+    "primaryGoalComplete": true,
+    "stabilized": true,
+    "collapsed": false,
+    "failureReason": ""
   },
   "stepHash": "04ce9b1a"
 }
@@ -161,9 +169,9 @@ Legacy mode still uses:
 ## Current Branch Workflow
 
 ```bash
-git switch -c feat/iteration-04-playability-tap-swipe-strategy
+git switch -c feat/iteration-05-node-goals-strategy
 git add .
-git commit -m "Improve Event Horizon playability tutorial and strategy"
-git push -u origin feat/iteration-04-playability-tap-swipe-strategy
-gh pr create --base main --head feat/iteration-04-playability-tap-swipe-strategy --title "Improve Event Horizon playability tutorial and strategy" --body-file docs/iteration-04-report.md
+git commit -m "Clarify Event Horizon node goals and strategy"
+git push -u origin feat/iteration-05-node-goals-strategy
+gh pr create --base main --head feat/iteration-05-node-goals-strategy --title "Clarify Event Horizon node goals and strategy" --body-file docs/iteration-05-report.md
 ```

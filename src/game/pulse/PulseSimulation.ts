@@ -8,6 +8,7 @@ import type {
   ChainAnalysis,
   HorizonLens,
   LiveInput,
+  NodeInfoCard,
   NodeTapAction,
   PulseGamePhase,
   PulseInputResult,
@@ -34,6 +35,7 @@ const LENS_MAX_CHARGES = 2;
 const ENERGY_DRAIN_PER_SECOND = 0.38;
 const STABILIZE_SCORE = 50;
 const DELAY_MS = [360, 700, 1080] as const;
+const PRIMARY_LOOP_HOLD_MS = 15000;
 
 export interface PulseSimulationOptions {
   seed: string;
@@ -74,12 +76,17 @@ export class PulseSimulation {
   private lastTapAction: NodeTapAction = 'none';
   private energyNodesHit = new Set<number>();
   private slowDrainMs = 0;
+  private loopHoldMs = 0;
+  private primaryGoalComplete = false;
+  private failureReason = '';
+  private nodeInfoCard: NodeInfoCard | undefined;
+  private nodeInfoCardMs = 0;
 
   constructor(options: PulseSimulationOptions) {
     this.seedValue = options.seed;
     this.startedAt = options.startedAt;
     this.level = generatePulseLevel(options.seed);
-    if (options.seed === 'tutorial-001') {
+    if (options.seed === 'tutorial-002' || options.seed === 'tutorial-001') {
       this.startTutorial();
     }
     this.updateHash();
@@ -118,9 +125,18 @@ export class PulseSimulation {
     this.lastTapAction = 'none';
     this.energyNodesHit = new Set();
     this.slowDrainMs = 0;
-    this.tutorialActive = seed === 'tutorial-001';
-    this.tutorialStep = this.tutorialActive ? 'swipe-chain' : 'skipped';
-    this.lastInputResult = { ok: true, kind: 'none', message: this.tutorialActive ? 'SWIPE THROUGH THESE NODES' : 'DRAW A CHAIN' };
+    this.loopHoldMs = 0;
+    this.primaryGoalComplete = false;
+    this.failureReason = '';
+    this.nodeInfoCard = undefined;
+    this.nodeInfoCardMs = 0;
+    this.tutorialActive = seed === 'tutorial-002' || seed === 'tutorial-001';
+    this.tutorialStep = this.tutorialActive ? 'battery-goal' : 'skipped';
+    this.lastInputResult = {
+      ok: true,
+      kind: 'none',
+      message: this.tutorialActive ? 'GOAL: LIGHT ALL 3 BATTERIES' : 'DRAW A CHAIN'
+    };
     this.updateHash();
   }
 
@@ -134,6 +150,7 @@ export class PulseSimulation {
 
     this.timeMs += dtMs;
     this.updateTimedVisuals(dtMs);
+    this.updateTutorialClock();
 
     if (this.phase === 'pulse') {
       const tutorialGrace = this.tutorialActive && this.timeMs < 10000;
@@ -142,9 +159,12 @@ export class PulseSimulation {
       this.slowDrainMs = Math.max(0, this.slowDrainMs - dtMs);
       this.updatePulses(dtMs);
       this.expireTemporaryLinks(dtMs);
+      this.updatePrimaryGoalProgress(dtMs);
       if (this.darkEnergy <= 0) {
         this.endRun('collapsed');
-      } else if (this.score >= this.level.targetScore || this.timeMs >= this.level.targetSurvivalMs) {
+      } else if (this.primaryGoalComplete) {
+        this.endRun('stabilized');
+      } else if (!this.tutorialActive && this.timeMs >= this.level.targetSurvivalMs && this.allRequiredBatteriesLit()) {
         this.endRun('stabilized');
       } else if (this.pulses.every((pulse) => !pulse.alive) && this.timeMs > 500) {
         this.darkEnergy = clamp(this.darkEnergy - 0.9, 0, MAX_ENERGY);
@@ -160,8 +180,17 @@ export class PulseSimulation {
 
   selectNode(nodeId: number | undefined): PulseInputResult {
     this.selectedNodeId = nodeId;
+    if (nodeId) {
+      const node = this.nodeById(nodeId);
+      if (node) {
+        this.showNodeInfo(node);
+      }
+    } else {
+      this.nodeInfoCard = undefined;
+      this.nodeInfoCardMs = 0;
+    }
     this.lastInputResult = nodeId
-      ? { ok: true, kind: 'select', message: 'NODE SELECTED', fromId: nodeId }
+      ? { ok: true, kind: 'select', message: `${playerName(this.nodeById(nodeId))} - TAP ANOTHER NODE TO LINK`, fromId: nodeId }
       : { ok: true, kind: 'none', message: 'SELECT A NODE' };
     return this.lastInputResult;
   }
@@ -187,7 +216,10 @@ export class PulseSimulation {
       this.buildInputs.push({ t: Math.round(this.timeMs), kind: 'link', fromId, toId });
     }
     this.selectedNodeId = undefined;
+    this.nodeInfoCard = undefined;
+    this.nodeInfoCardMs = 0;
     this.lastInputResult = { ok: true, kind: 'link', message: 'GRAVITATIONAL LINK', fromId, toId };
+    this.advanceTutorial('link');
     this.updateHash();
     return this.lastInputResult;
   }
@@ -201,6 +233,8 @@ export class PulseSimulation {
     const crossed = nodesCrossedByPath(this.level.nodes, path, 78);
     const nodeIds = crossed.map((node) => node.id);
     this.lastChainNodeIds = nodeIds;
+    this.nodeInfoCard = undefined;
+    this.nodeInfoCardMs = 0;
     if (nodeIds.length < 2) {
       this.lastInputResult = { ok: false, kind: 'chainSwipe', message: 'NO NODES CROSSED', nodeIds };
       this.advanceTutorial('chain-miss');
@@ -253,25 +287,31 @@ export class PulseSimulation {
     }
 
     let action: NodeTapAction = 'select';
+    this.showNodeInfo(node);
     if (node.type === 'energy') {
       node.primed = !node.primed;
       node.activationMs = 520;
       action = 'prime';
-      this.lastInputResult = { ok: true, kind: 'nodeTap', message: node.primed ? 'ENERGY PRIMED' : 'ENERGY UNPRIMED', nodeId };
+      this.lastInputResult = {
+        ok: true,
+        kind: 'nodeTap',
+        message: node.primed ? 'BATTERY OVERCHARGED - next hit gives bonus energy' : 'BATTERY OVERCHARGE OFF',
+        nodeId
+      };
     } else if (node.type === 'delay') {
       node.delayLevel = ((node.delayLevel + 1) % 3) as 0 | 1 | 2;
       node.activationMs = 520;
       action = 'delay';
-      this.lastInputResult = { ok: true, kind: 'nodeTap', message: `DELAY ${node.delayLevel + 1}`, nodeId };
+      this.lastInputResult = { ok: true, kind: 'nodeTap', message: `CAPACITOR DELAY: ${delayName(node.delayLevel)}`, nodeId };
     } else if (node.type === 'splitter') {
       node.splitterPriority = (node.splitterPriority + 1) % 3;
       node.activationMs = 520;
       action = 'splitter';
-      this.lastInputResult = { ok: true, kind: 'nodeTap', message: 'SPLITTER AIMED', nodeId };
+      this.lastInputResult = { ok: true, kind: 'nodeTap', message: 'ROUTER AIMED', nodeId };
       this.advanceTutorial('splitter');
     } else {
       this.selectedNodeId = nodeId;
-      this.lastInputResult = { ok: true, kind: 'select', message: `SELECTED ${node.label}`, nodeId };
+      this.lastInputResult = { ok: true, kind: 'select', message: `${playerName(node)} - use it to extend your chain`, nodeId };
     }
     this.lastTapAction = action;
     if (record) {
@@ -308,7 +348,7 @@ export class PulseSimulation {
       this.lastInputResult = {
         ok: true,
         kind: 'stabilize',
-        message: rating === 'perfect' ? 'PERFECT TAP +75' : 'STABILIZED +50',
+        message: rating === 'perfect' ? 'PERFECT TAP - collapse slowed' : 'STABILIZED - collapse slowed',
         nodeId,
         scoreDelta: rating === 'perfect' ? 75 : 50,
         energyDelta: 2
@@ -471,10 +511,10 @@ export class PulseSimulation {
   }
 
   startTutorial(): void {
-    this.seedValue = 'tutorial-001';
+    this.seedValue = 'tutorial-002';
     this.level = generatePulseLevel(this.seedValue);
     this.tutorialActive = true;
-    this.tutorialStep = 'swipe-chain';
+    this.tutorialStep = 'battery-goal';
     this.phase = 'build';
     this.timeMs = 0;
     this.score = 0;
@@ -501,14 +541,19 @@ export class PulseSimulation {
     this.lastTapAction = 'none';
     this.energyNodesHit = new Set();
     this.slowDrainMs = 0;
-    this.lastInputResult = { ok: true, kind: 'none', message: 'SWIPE THROUGH THESE NODES', nodeIds: [1, 2, 3] };
+    this.loopHoldMs = 0;
+    this.primaryGoalComplete = false;
+    this.failureReason = '';
+    this.nodeInfoCard = undefined;
+    this.nodeInfoCardMs = 0;
+    this.lastInputResult = { ok: true, kind: 'none', message: 'GOAL: LIGHT ALL 3 BATTERIES', nodeIds: [2, 4, 6] };
     this.updateHash();
   }
 
   skipTutorial(): void {
     this.tutorialActive = false;
     this.tutorialStep = 'skipped';
-    this.lastInputResult = { ok: true, kind: 'none', message: 'DRAW A CHAIN' };
+    this.lastInputResult = { ok: true, kind: 'none', message: 'LIGHT THE BATTERIES AND CLOSE THE LOOP' };
     this.updateHash();
   }
 
@@ -533,7 +578,8 @@ export class PulseSimulation {
     node.primed = true;
     node.activationMs = 520;
     this.lastTapAction = 'prime';
-    this.lastInputResult = { ok: true, kind: 'nodeTap', message: 'ENERGY PRIMED', nodeId: id };
+    this.showNodeInfo(node);
+    this.lastInputResult = { ok: true, kind: 'nodeTap', message: 'BATTERY OVERCHARGED - next hit gives bonus energy', nodeId: id };
     this.updateHash();
     return this.lastInputResult;
   }
@@ -544,7 +590,7 @@ export class PulseSimulation {
 
   fixChain(): PulseInputResult {
     this.forceBuildPhase();
-    this.lastInputResult = { ok: true, kind: 'fix', message: 'FIX THE DEAD END', nodeId: this.deadEndNodeId };
+    this.lastInputResult = { ok: true, kind: 'fix', message: this.failureReason || 'FIX THE CHAIN', nodeId: this.deadEndNodeId };
     return this.lastInputResult;
   }
 
@@ -594,6 +640,12 @@ export class PulseSimulation {
       score: this.score,
       darkEnergy: this.darkEnergy,
       collapseMeter: this.darkEnergy,
+      batteriesLit: this.batteriesLitCount(),
+      batteriesRequired: this.level.requiredBatteryIds.length,
+      requiredBatteryIds: this.level.requiredBatteryIds,
+      loopClosed: this.computeChainAnalysis().sourceLoopClosed,
+      loopHoldMs: Math.round(this.loopHoldMs),
+      primaryGoalComplete: this.primaryGoalComplete,
       multiplier: this.multiplier,
       maxMultiplier: this.maxMultiplier,
       chainLength: this.chainLength,
@@ -619,9 +671,11 @@ export class PulseSimulation {
       tutorialGhostPath: this.tutorialGhostPath(),
       chainAnalysis: this.computeChainAnalysis(),
       suggestedFixes: this.computeSuggestedFixes(),
+      nodeInfoCard: this.nodeInfoCard,
       lastChainNodeIds: this.lastChainNodeIds,
       lastTapAction: this.lastTapAction,
       deadEndNodeId: this.deadEndNodeId,
+      failureReason: this.failureReason || this.currentFailureReason(),
       lastInputResult: this.lastInputResult,
       stepHash: this.stepHash
     };
@@ -699,6 +753,13 @@ export class PulseSimulation {
     node.activationMs = 520;
     this.addScore(LINK_TRAVERSAL_SCORE, 0.18);
 
+    if (node.type === 'source' && pulse.previousNodeId !== undefined && this.allRequiredBatteriesLit()) {
+      this.loopHoldMs = Math.max(this.loopHoldMs, 1000);
+      this.primaryGoalComplete = true;
+      this.lastInputResult = { ok: true, kind: 'play', message: 'LOOP CLOSED - SECTOR STABILIZED', nodeId };
+      return;
+    }
+
     const firstRepeatedIndex = pulse.visitedNodeIds.indexOf(nodeId);
     if (firstRepeatedIndex >= 0 && firstRepeatedIndex < pulse.visitedNodeIds.length - 1) {
       const loopLength = pulse.visitedNodeIds.length - 1 - firstRepeatedIndex;
@@ -716,9 +777,16 @@ export class PulseSimulation {
       const primedBonus = node.primed ? 80 : 0;
       this.addScore((fresh ? ENERGY_NODE_SCORE : 25) + primedBonus, fresh ? 6.2 + primedBonus / 40 : 1.4);
       node.primed = false;
+      node.lit = true;
       node.scoreCooldownMs = fresh ? 2600 : node.scoreCooldownMs;
       this.energyNodesHit.add(node.id);
       this.lensCharges = Math.min(LENS_MAX_CHARGES, this.lensCharges + 1);
+      this.lastInputResult = {
+        ok: true,
+        kind: 'play',
+        message: this.allRequiredBatteriesLit() ? 'ALL BATTERIES LIT - KEEP LOOP ALIVE' : 'BATTERY LIT',
+        nodeId: node.id
+      };
     } else if (node.type === 'delay') {
       this.addScore(DELAY_NODE_SCORE, 1.1);
       pulse.delayMs = DELAY_MS[node.delayLevel];
@@ -794,7 +862,8 @@ export class PulseSimulation {
     this.deadEndNodeId = pulse.currentNodeId;
     this.darkEnergy = clamp(this.darkEnergy - 5.6, 0, MAX_ENERGY);
     this.multiplier = 1;
-    this.lastInputResult = { ok: false, kind: 'invalid', message: 'DEAD END' };
+    this.failureReason = this.currentFailureReason();
+    this.lastInputResult = { ok: false, kind: 'invalid', message: 'PULSE LOST - dead end' };
   }
 
   private addScore(base: number, energyGain: number): void {
@@ -818,6 +887,12 @@ export class PulseSimulation {
     }
     for (const link of this.links) {
       link.flashMs = Math.max(0, link.flashMs - dtMs);
+    }
+    if (this.nodeInfoCardMs > 0) {
+      this.nodeInfoCardMs = Math.max(0, this.nodeInfoCardMs - dtMs);
+      if (this.nodeInfoCardMs === 0) {
+        this.nodeInfoCard = undefined;
+      }
     }
     for (let index = this.lenses.length - 1; index >= 0; index -= 1) {
       const lens = this.lenses[index];
@@ -863,7 +938,12 @@ export class PulseSimulation {
     this.endReason = reason;
     this.collapsed = reason === 'collapsed';
     this.stabilized = reason === 'stabilized';
+    this.failureReason = reason === 'stabilized' ? '' : this.currentFailureReason();
     if (this.stabilized) {
+      this.primaryGoalComplete = true;
+      if (this.tutorialActive) {
+        this.tutorialStep = 'advanced';
+      }
       this.addScore(350 + (this.level.linkBudget - this.links.filter((link) => !link.temporary).length) * 80, 0);
     }
     this.pulses = [];
@@ -879,59 +959,83 @@ export class PulseSimulation {
       linksUsed: this.links.filter((link) => !link.temporary).length,
       bestChainLength: this.chainLength,
       energyNodesHit: this.energyNodesHit.size,
+      batteriesLit: this.batteriesLitCount(),
+      batteriesRequired: this.level.requiredBatteryIds.length,
+      loopClosed: this.computeChainAnalysis().sourceLoopClosed,
+      loopHoldMs: Math.round(this.loopHoldMs),
+      primaryGoalComplete: this.primaryGoalComplete,
       stabilized: this.stabilized,
-      collapsed: this.collapsed
+      collapsed: this.collapsed,
+      failureReason: this.failureReason
     };
   }
 
   private tutorialHint(): string {
     if (this.tutorialActive) {
-      if (this.tutorialStep === 'swipe-chain') {
-        return 'SWIPE THROUGH THESE NODES';
+      if (this.tutorialStep === 'battery-goal') {
+        return 'GOAL: LIGHT ALL 3 BATTERIES';
       }
-      if (this.tutorialStep === 'tap-splitter') {
-        return 'TAP THE SPLITTER TO AIM IT';
+      if (this.tutorialStep === 'swipe-batteries') {
+        return 'SWIPE FROM SOURCE THROUGH BATTERIES';
+      }
+      if (this.tutorialStep === 'add-battery') {
+        return 'ADD THE LAST BATTERY';
+      }
+      if (this.tutorialStep === 'close-loop') {
+        return 'CLOSE THE LOOP BACK TO SOURCE';
       }
       if (this.tutorialStep === 'press-play') {
         return 'PRESS PLAY';
       }
-      if (this.tutorialStep === 'stabilize') {
-        return 'TAP THE NEXT NODE TO STABILIZE';
+      if (this.tutorialStep === 'loop-alive') {
+        return 'THE LOOP KEEPS THE GALAXY ALIVE';
       }
-      if (this.tutorialStep === 'lens') {
-        return 'SWIPE BETWEEN NODES TO CREATE A HORIZON LENS';
-      }
-      if (this.tutorialStep === 'loops') {
-        return 'BUILD LOOPS TO DELAY COLLAPSE';
+      if (this.tutorialStep === 'advanced') {
+        return 'ADVANCED NODES APPEAR NEXT';
       }
     }
     if (this.phase === 'build') {
       if (this.links.filter((link) => !link.temporary).length === 0) {
-        return 'SWIPE THROUGH NODES TO DRAW A CHAIN';
+        return 'LIGHT THE BATTERIES';
       }
-      return 'PRESS PLAY';
+      return this.computeChainAnalysis().hint;
     }
     if (this.phase === 'pulse' && this.liveInputs.length === 0) {
-      return 'SWIPE TO CREATE A HORIZON LENS';
+      return 'KEEP THE PULSE ALIVE';
     }
     return this.phase === 'ended' ? (this.stabilized ? 'SECTOR STABILIZED' : 'GALAXY COLLAPSED') : 'WATCH THE PULSE';
   }
 
-  private advanceTutorial(event: 'chain' | 'chain-miss' | 'splitter' | 'play' | 'stabilize' | 'lens'): void {
+  private advanceTutorial(event: 'chain' | 'chain-miss' | 'link' | 'splitter' | 'play' | 'stabilize' | 'lens'): void {
     if (!this.tutorialActive) {
       return;
     }
-    if (this.tutorialStep === 'swipe-chain' && event === 'chain' && this.links.some((link) => link.fromId === 1 && link.toId === 2) && this.links.some((link) => link.fromId === 2 && link.toId === 3)) {
-      this.tutorialStep = 'tap-splitter';
-      this.lastInputResult = { ...this.lastInputResult, message: 'CHAIN CREATED. TAP THE SPLITTER' };
-    } else if (this.tutorialStep === 'tap-splitter' && event === 'splitter') {
+    if (
+      this.tutorialStep === 'swipe-batteries' &&
+      event === 'chain' &&
+      this.hasLinks([
+        [1, 2],
+        [2, 3],
+        [3, 4]
+      ])
+    ) {
+      this.tutorialStep = 'add-battery';
+      this.lastInputResult = { ...this.lastInputResult, message: 'GOOD. ADD THE LAST BATTERY' };
+    } else if (
+      this.tutorialStep === 'add-battery' &&
+      (event === 'chain' || event === 'link') &&
+      this.hasLinks([
+        [4, 5],
+        [5, 6]
+      ])
+    ) {
+      this.tutorialStep = 'close-loop';
+      this.lastInputResult = { ...this.lastInputResult, message: 'LAST BATTERY READY. CLOSE THE LOOP' };
+    } else if (this.tutorialStep === 'close-loop' && (event === 'chain' || event === 'link') && this.hasLinks([[6, 1]])) {
       this.tutorialStep = 'press-play';
+      this.lastInputResult = { ...this.lastInputResult, message: 'LOOP READY. PRESS PLAY' };
     } else if (this.tutorialStep === 'press-play' && event === 'play') {
-      this.tutorialStep = 'stabilize';
-    } else if (this.tutorialStep === 'stabilize' && event === 'stabilize') {
-      this.tutorialStep = 'lens';
-    } else if (this.tutorialStep === 'lens' && event === 'lens') {
-      this.tutorialStep = 'loops';
+      this.tutorialStep = 'loop-alive';
     }
   }
 
@@ -939,23 +1043,36 @@ export class PulseSimulation {
     if (!this.tutorialActive) {
       return [];
     }
-    if (this.tutorialStep === 'swipe-chain') {
-      return [1, 2, 3];
+    if (this.tutorialStep === 'battery-goal') {
+      return [2, 4, 6];
     }
-    if (this.tutorialStep === 'tap-splitter') {
-      return [4];
+    if (this.tutorialStep === 'swipe-batteries') {
+      return [1, 2, 3, 4];
     }
-    if (this.tutorialStep === 'stabilize') {
-      return [3, 4];
+    if (this.tutorialStep === 'add-battery') {
+      return [4, 5, 6];
     }
-    if (this.tutorialStep === 'lens') {
-      return [3, 4];
+    if (this.tutorialStep === 'close-loop') {
+      return [6, 1];
+    }
+    if (this.tutorialStep === 'press-play') {
+      return [1, 2, 4, 6];
+    }
+    if (this.tutorialStep === 'advanced') {
+      return [7, 8, 11, 12];
     }
     return [];
   }
 
   private tutorialGhostPath(): WorldPoint[] {
-    const ids = this.tutorialHighlightNodeIds();
+    let ids: number[] = [];
+    if (this.tutorialStep === 'swipe-batteries') {
+      ids = [1, 2, 3, 4];
+    } else if (this.tutorialStep === 'add-battery') {
+      ids = [4, 5, 6];
+    } else if (this.tutorialStep === 'close-loop') {
+      ids = [6, 1];
+    }
     if (ids.length < 2) {
       return [];
     }
@@ -966,40 +1083,67 @@ export class PulseSimulation {
   }
 
   private computeChainAnalysis(): ChainAnalysis {
-    const totalEnergyNodes = this.level.nodes.filter((node) => node.type === 'energy').length;
+    const totalEnergyNodes = this.level.requiredBatteryIds.length;
     const reachable = this.reachableFromSource();
-    const reachableEnergyNodes = this.level.nodes.filter((node) => node.type === 'energy' && reachable.has(node.id)).length;
+    const reachableBatteryIds = this.level.requiredBatteryIds.filter((id) => reachable.has(id));
+    const reachableEnergyNodes = reachableBatteryIds.length;
+    const missingBatteryIds = this.level.requiredBatteryIds.filter((id) => !reachable.has(id));
     const deadEndNodeIds = [...reachable].filter((nodeId) => nodeId !== this.level.sourceId && this.outgoingLinks(nodeId).filter((link) => !link.temporary).length === 0);
     const hasLoop = this.hasReachableLoop();
+    const sourceLoopClosed = this.sourceLoopClosed();
     const linksUsed = this.links.filter((link) => !link.temporary).length;
-    let quality: ChainAnalysis['quality'] = 'Draw a chain';
-    if (linksUsed > 0) {
-      quality = 'Good start';
-    }
-    if (deadEndNodeIds.length > 0) {
-      quality = 'Dead end detected';
-    } else if (hasLoop && reachableEnergyNodes >= 2) {
+    const allRequiredBatteriesReachable = missingBatteryIds.length === 0;
+    const allRequiredBatteriesInLoop = sourceLoopClosed && this.level.requiredBatteryIds.every((id) => reachable.has(id) && this.pathExists(id, this.level.sourceId));
+    let quality: ChainAnalysis['quality'] = 'Start at SOURCE';
+    if (linksUsed === 0) {
+      quality = 'Start at SOURCE';
+    } else if (!allRequiredBatteriesReachable) {
+      quality = 'This chain misses a Battery';
+    } else if (deadEndNodeIds.length > 0) {
+      quality = 'This chain has a dead end';
+    } else if (!sourceLoopClosed) {
+      quality = 'Close the loop';
+    } else if (allRequiredBatteriesInLoop) {
       quality = 'Great loop';
-    } else if (hasLoop) {
-      quality = 'Loop possible';
-    } else if (reachableEnergyNodes < Math.min(2, totalEnergyNodes)) {
-      quality = 'Hit more Energy nodes';
+    } else {
+      quality = 'Good chain';
     }
-    return { reachableEnergyNodes, totalEnergyNodes, deadEndNodeIds, hasLoop, linksUsed, quality };
+    return {
+      reachableEnergyNodes,
+      totalEnergyNodes,
+      reachableBatteryNodes: reachableBatteryIds.length,
+      totalRequiredBatteries: this.level.requiredBatteryIds.length,
+      reachableBatteryIds,
+      missingBatteryIds,
+      deadEndNodeIds,
+      hasLoop,
+      sourceLoopClosed,
+      allRequiredBatteriesReachable,
+      allRequiredBatteriesInLoop,
+      linksUsed,
+      quality,
+      hint: hintForQuality(quality, missingBatteryIds.length)
+    };
   }
 
   private computeSuggestedFixes(): SuggestedFix[] {
     const analysis = this.computeChainAnalysis();
     const fromId = this.deadEndNodeId ?? analysis.deadEndNodeIds[0];
-    const from = fromId ? this.nodeById(fromId) : undefined;
+    const from = fromId ? this.nodeById(fromId) : this.lastReachableNode();
     if (!from) {
       return [];
     }
+    const targets = analysis.missingBatteryIds.length > 0
+      ? analysis.missingBatteryIds.map((id) => this.nodeById(id)).filter((node): node is PulseNode => node !== undefined)
+      : [this.nodeById(this.level.sourceId), ...this.level.nodes.filter((node) => node.id !== from.id && node.type === 'energy')].filter(
+          (node): node is PulseNode => node !== undefined
+        );
     return this.level.nodes
+      .filter((node) => targets.includes(node))
       .filter((node) => node.id !== from.id && !this.links.some((link) => link.fromId === from.id && link.toId === node.id))
       .sort((a, b) => Math.hypot(a.x - from.x, a.y - from.y) - Math.hypot(b.x - from.x, b.y - from.y))
       .slice(0, 2)
-      .map((node) => ({ fromId: from.id, toId: node.id, message: `Try linking ${from.label} to ${node.label}` }));
+      .map((node) => ({ fromId: from.id, toId: node.id, message: `Fix: connect ${playerName(from)} to ${playerName(node)}` }));
   }
 
   private reachableFromSource(): Set<number> {
@@ -1045,6 +1189,105 @@ export class PulseSimulation {
     return visit(this.level.sourceId);
   }
 
+  private sourceLoopClosed(): boolean {
+    const visit = (nodeId: number, depth: number, seen: Set<number>): boolean => {
+      if (depth >= 3 && nodeId === this.level.sourceId) {
+        return true;
+      }
+      if (depth > 0 && seen.has(nodeId)) {
+        return false;
+      }
+      seen.add(nodeId);
+      for (const link of this.outgoingLinks(nodeId).filter((candidate) => !candidate.temporary)) {
+        if (visit(link.toId, depth + 1, new Set(seen))) {
+          return true;
+        }
+      }
+      return false;
+    };
+    return visit(this.level.sourceId, 0, new Set());
+  }
+
+  private pathExists(fromId: number, toId: number): boolean {
+    const seen = new Set<number>();
+    const queue = [fromId];
+    while (queue.length > 0) {
+      const nodeId = queue.shift();
+      if (nodeId === undefined || seen.has(nodeId)) {
+        continue;
+      }
+      if (nodeId === toId) {
+        return true;
+      }
+      seen.add(nodeId);
+      for (const link of this.outgoingLinks(nodeId).filter((candidate) => !candidate.temporary)) {
+        queue.push(link.toId);
+      }
+    }
+    return false;
+  }
+
+  private lastReachableNode(): PulseNode | undefined {
+    const reachable = [...this.reachableFromSource()].filter((id) => id !== this.level.sourceId);
+    for (let index = reachable.length - 1; index >= 0; index -= 1) {
+      const node = this.nodeById(reachable[index]);
+      if (node) {
+        return node;
+      }
+    }
+    return this.nodeById(this.level.sourceId);
+  }
+
+  private allRequiredBatteriesLit(): boolean {
+    return this.level.requiredBatteryIds.every((id) => this.nodeById(id)?.lit);
+  }
+
+  private batteriesLitCount(): number {
+    return this.level.requiredBatteryIds.filter((id) => this.nodeById(id)?.lit).length;
+  }
+
+  private updatePrimaryGoalProgress(dtMs: number): void {
+    const analysis = this.computeChainAnalysis();
+    if (this.allRequiredBatteriesLit() && analysis.sourceLoopClosed) {
+      this.loopHoldMs += dtMs;
+      if (this.loopHoldMs >= PRIMARY_LOOP_HOLD_MS) {
+        this.primaryGoalComplete = true;
+      }
+    } else {
+      this.loopHoldMs = 0;
+    }
+  }
+
+  private updateTutorialClock(): void {
+    if (this.tutorialActive && this.phase === 'build' && this.tutorialStep === 'battery-goal' && this.timeMs >= 1150) {
+      this.tutorialStep = 'swipe-batteries';
+      this.lastInputResult = { ok: true, kind: 'none', message: 'SWIPE FROM SOURCE THROUGH BATTERIES' };
+    }
+  }
+
+  private hasLinks(pairs: Array<[number, number]>): boolean {
+    return pairs.every(([fromId, toId]) => this.links.some((link) => !link.temporary && link.fromId === fromId && link.toId === toId));
+  }
+
+  private currentFailureReason(): string {
+    const analysis = this.computeChainAnalysis();
+    if (this.batteriesLitCount() < this.level.requiredBatteryIds.length) {
+      return `Only ${this.batteriesLitCount()}/${this.level.requiredBatteryIds.length} Batteries were lit. Fix: route the chain through every Battery.`;
+    }
+    if (!analysis.sourceLoopClosed) {
+      return 'The pulse could not return to Source. Fix: connect the final node back to Source.';
+    }
+    if (this.deadEndNodeId !== undefined) {
+      return `The chain ended at ${playerName(this.nodeById(this.deadEndNodeId))}. Fix: connect it to a Battery or back into the loop.`;
+    }
+    return 'The Collapse Meter emptied. Fix: light Batteries sooner and close the loop.';
+  }
+
+  private showNodeInfo(node: PulseNode): void {
+    this.nodeInfoCard = nodeInfoFor(node);
+    this.nodeInfoCardMs = 5200;
+  }
+
   private arrivalReadiness(nodeId: number): 'perfect' | 'soon' | 'early' | 'late' {
     for (const pulse of this.pulses) {
       if (pulse.nextNodeId === nodeId) {
@@ -1071,7 +1314,8 @@ export class PulseSimulation {
       Math.round(this.darkEnergy * 10),
       this.multiplier,
       this.tutorialStep,
-      this.level.nodes.map((node) => `${node.id}:${node.primed ? 1 : 0}:${node.delayLevel}:${node.splitterPriority}`).join('|'),
+      this.level.nodes.map((node) => `${node.id}:${node.primed ? 1 : 0}:${node.lit ? 1 : 0}:${node.delayLevel}:${node.splitterPriority}`).join('|'),
+      Math.round(this.loopHoldMs),
       this.links.map((link) => `${link.fromId}>${link.toId}:${link.temporary ? Math.round(link.expiresMs - link.ageMs) : 0}`).join('|'),
       this.pulses.map((pulse) => `${pulse.currentNodeId}>${pulse.nextNodeId ?? 0}:${Math.round(pulse.progress * 1000)}:${Math.round(pulse.delayMs)}`).join('|')
     ].join(';');
@@ -1098,6 +1342,92 @@ function multiplierForChain(chainLength: number): number {
     return 2;
   }
   return 1;
+}
+
+function playerName(node: PulseNode | undefined): string {
+  if (!node) {
+    return 'NODE';
+  }
+  if (node.type === 'source') {
+    return 'SOURCE';
+  }
+  if (node.type === 'energy') {
+    return 'BATTERY';
+  }
+  if (node.type === 'conduit') {
+    return 'RELAY';
+  }
+  if (node.type === 'delay') {
+    return 'CAPACITOR';
+  }
+  return 'ROUTER';
+}
+
+function nodeInfoFor(node: PulseNode): NodeInfoCard {
+  if (node.type === 'source') {
+    return {
+      nodeId: node.id,
+      title: 'SOURCE',
+      body: 'The pulse starts here.',
+      action: 'Draw a chain outward and close the loop back here.'
+    };
+  }
+  if (node.type === 'energy') {
+    return {
+      nodeId: node.id,
+      title: 'BATTERY',
+      body: 'Goal node. Light all Batteries to stabilize the sector.',
+      action: 'Tap again to overcharge the next hit.'
+    };
+  }
+  if (node.type === 'conduit') {
+    return {
+      nodeId: node.id,
+      title: 'RELAY',
+      body: 'Connector node. Use Relays to reach Batteries or bend around the black hole.',
+      action: 'Tap another node to link from here.'
+    };
+  }
+  if (node.type === 'delay') {
+    return {
+      nodeId: node.id,
+      title: 'CAPACITOR',
+      body: 'Timing node. It holds the pulse briefly.',
+      action: 'Tap again to cycle short, medium, or long delay.'
+    };
+  }
+  return {
+    nodeId: node.id,
+    title: 'ROUTER',
+    body: 'Direction node. It chooses which route the pulse takes first.',
+    action: 'Tap again to aim the outgoing route.'
+  };
+}
+
+function delayName(level: PulseNode['delayLevel']): string {
+  return level === 0 ? 'SHORT' : level === 1 ? 'MEDIUM' : 'LONG';
+}
+
+function hintForQuality(quality: ChainAnalysis['quality'], missingBatteries: number): string {
+  if (quality === 'Start at SOURCE') {
+    return 'Start at SOURCE';
+  }
+  if (quality === 'This chain misses a Battery') {
+    return `This chain misses ${missingBatteries} Battery${missingBatteries === 1 ? '' : 'ies'}`;
+  }
+  if (quality === 'This chain has a dead end') {
+    return 'This chain has a dead end';
+  }
+  if (quality === 'Close the loop') {
+    return 'Close the loop';
+  }
+  if (quality === 'Great loop') {
+    return 'Great loop';
+  }
+  if (quality === 'Good chain') {
+    return 'Good chain';
+  }
+  return 'Reach the Batteries';
 }
 
 function splitterOrder(a: PulseLink, b: PulseLink, priority: number): number {

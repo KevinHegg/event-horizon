@@ -15,6 +15,7 @@
           <button id="restart-button" type="button" aria-label="Restart run" title="Restart run">↻</button>
           <button id="share-button" type="button" aria-label="Create share poster" title="Create share poster">⇪</button>
           <button id="help-button" type="button" aria-label="How to play" title="How to play">?</button>
+          <button id="legend-button" type="button" aria-label="Node legend" title="Node legend">N</button>
           <a id="poster-link" download="event-horizon-poster.png" aria-label="Download share poster">⇩</a>
         </div>
         <div id="pulse-controls" aria-live="polite">
@@ -31,16 +32,31 @@
               <span class="help-swipe"></span>
             </div>
             <h1 id="help-title">EVENT HORIZON</h1>
-            <p>Build a chain. Then keep it alive.</p>
+            <h2>GOAL</h2>
+            <p>Light all Dark Energy Batteries.<br />Close the loop.<br />Keep the pulse alive.</p>
             <h2>BUILD</h2>
-            <p>Swipe through nodes to draw a chain.<br />Tap nodes to tune them.<br />Press Play.</p>
+            <p>Swipe through nodes to draw a chain.<br />Tap nodes to learn or tune them.<br />Connect the chain back into a loop.</p>
             <h2>RUN</h2>
-            <p>The pulse follows your links.<br />Energy nodes refill the Collapse Meter.<br />Long chains and loops multiply your score.</p>
+            <p>Press Play.<br />The pulse follows your links.<br />Batteries refill the Collapse Meter.</p>
             <h2>RESCUE</h2>
-            <p>Tap nodes as the pulse arrives to stabilize them.<br />Swipe between nodes to create a temporary Horizon Lens bridge.</p>
-            <p>The black hole always wins.<br />Your strategy buys the galaxy time.</p>
+            <p>Tap a node as the pulse arrives to stabilize it.<br />Swipe between nodes to create a temporary Horizon Lens bridge.</p>
+            <h2>WIN</h2>
+            <p>Light every Battery and keep the loop alive.</p>
+            <h2>LOSE</h2>
+            <p>If the pulse dies or the Collapse Meter empties, the galaxy collapses.</p>
             <button id="help-play-button" type="button">START TUTORIAL</button>
             <button id="help-skip-button" type="button">SKIP TUTORIAL</button>
+          </div>
+        </section>
+        <section id="legend-overlay" aria-modal="true" role="dialog" aria-labelledby="legend-title" hidden>
+          <div id="legend-panel">
+            <h1 id="legend-title">NODE TYPES</h1>
+            <p><span class="legend-node source">▶</span><strong>SOURCE</strong><br />Pulse starts here.</p>
+            <p><span class="legend-node battery">★</span><strong>BATTERY</strong><br />Light all Batteries to stabilize the sector.</p>
+            <p><span class="legend-node relay">•</span><strong>RELAY</strong><br />Connects your chain.</p>
+            <p><span class="legend-node capacitor">II</span><strong>CAPACITOR</strong><br />Tap to change delay.</p>
+            <p><span class="legend-node router">Y</span><strong>ROUTER</strong><br />Tap to aim output.</p>
+            <button id="legend-close-button" type="button">CLOSE</button>
           </div>
         </section>
       </div>

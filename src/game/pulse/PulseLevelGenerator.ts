@@ -11,32 +11,45 @@ export function getDailyPulseSeed(date = new Date()): string {
 
 export function generatePulseLevel(seed: string): PulseLevel {
   const rng = createSeededRandom(`pulse-chain-${seed}`);
-  const firstSeed = seed === 'tutorial-001' || seed === 'daily-2026-05-30' || seed === 'tutorial' || seed === 'eh-pulse-alpha';
+  const firstSeed =
+    seed === 'tutorial-002' ||
+    seed === 'tutorial-001' ||
+    seed === 'daily-2026-05-30' ||
+    seed === 'tutorial' ||
+    seed === 'eh-pulse-alpha';
   const baseNodes = firstSeed ? tutorialNodes() : generatedNodes(rng);
+  const requiredBatteryIds = baseNodes
+    .filter((node) => node.type === 'energy')
+    .slice(0, firstSeed ? 3 : 4)
+    .map((node) => node.id);
+  for (const node of baseNodes) {
+    node.required = requiredBatteryIds.includes(node.id);
+  }
   return {
     seed,
     nodes: baseNodes,
     sourceId: 1,
     linkBudget: 6,
     targetScore: 1800,
-    targetSurvivalMs: 45000
+    targetSurvivalMs: 45000,
+    requiredBatteryIds
   };
 }
 
 function tutorialNodes(): PulseNode[] {
   const specs: Array<[PulseNodeType, number, number, number, string]> = [
-    ['source', 250, 1388, 0, 'SOURCE'],
-    ['energy', 420, 1165, 1, '+100'],
-    ['delay', 635, 1010, 1, 'DELAY'],
-    ['splitter', 770, 775, 2, 'SPLIT'],
-    ['energy', 515, 620, 2, '+100'],
-    ['energy', 835, 1215, 2, '+100'],
-    ['conduit', 305, 805, 2, 'CONDUIT'],
-    ['conduit', 705, 1412, 2, 'CONDUIT'],
-    ['delay', 252, 1085, 1, 'DELAY'],
-    ['splitter', 910, 935, 2, 'SPLIT'],
-    ['energy', 485, 1515, 2, '+100'],
-    ['conduit', 805, 545, 2, 'CONDUIT']
+    ['source', 246, 1410, 0, 'SOURCE'],
+    ['energy', 370, 1185, 1, 'BATTERY'],
+    ['conduit', 560, 1065, 1, 'RELAY'],
+    ['energy', 760, 930, 1, 'BATTERY'],
+    ['conduit', 735, 1235, 1, 'RELAY'],
+    ['energy', 515, 1435, 1, 'BATTERY'],
+    ['delay', 265, 820, 2, 'CAPACITOR'],
+    ['splitter', 825, 650, 2, 'ROUTER'],
+    ['conduit', 425, 650, 2, 'RELAY'],
+    ['conduit', 875, 1460, 2, 'RELAY'],
+    ['delay', 570, 520, 2, 'CAPACITOR'],
+    ['splitter', 910, 1110, 2, 'ROUTER']
   ];
   return specs.map(([type, x, y, ring, label], index) => makeNode(index + 1, type, x, y, ring, label));
 }
@@ -111,6 +124,8 @@ function makeNode(id: number, type: PulseNodeType, x: number, y: number, ring: n
     activationMs: 0,
     scoreCooldownMs: 0,
     primed: false,
+    lit: false,
+    required: false,
     delayLevel: 1,
     splitterPriority: 0,
     stabilizedMs: 0
@@ -119,15 +134,15 @@ function makeNode(id: number, type: PulseNodeType, x: number, y: number, ring: n
 
 function labelFor(type: PulseNodeType): string {
   if (type === 'energy') {
-    return 'ENERGY';
+    return 'BATTERY';
   }
   if (type === 'delay') {
-    return 'DELAY';
+    return 'CAPACITOR';
   }
   if (type === 'splitter') {
-    return 'SPLIT';
+    return 'ROUTER';
   }
-  return 'CONDUIT';
+  return 'RELAY';
 }
 
 function clampToPlayfield(x: number): number {

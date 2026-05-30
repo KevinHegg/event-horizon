@@ -1,0 +1,125 @@
+$ npm run build
+
+> event-horizon@0.1.0 build
+> tsc --noEmit && vite build
+
+vite v8.0.14 building client environment for production...
+[2Ktransforming...✓ 724 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                                     4.64 kB │ gzip:  1.47 kB
+dist/assets/index-ClKeGoQx.css                      5.39 kB │ gzip:  1.80 kB
+dist/assets/webworkerAll-u0-LKNcn.js                0.06 kB │ gzip:  0.07 kB
+dist/assets/WebGLRenderer-Dr5I3uql.js               0.07 kB │ gzip:  0.07 kB
+dist/assets/CanvasRenderer-C_VE2uLM.js              0.07 kB │ gzip:  0.08 kB
+dist/assets/WebGPURenderer-BqF0A8r4.js              0.07 kB │ gzip:  0.08 kB
+dist/assets/init-nWfKNZF3.js                        0.16 kB │ gzip:  0.16 kB │ map:   0.57 kB
+dist/assets/browserAll-DjO1SdvZ.js                  0.29 kB │ gzip:  0.23 kB │ map:   1.51 kB
+dist/assets/getTextureBatchBindGroup-Dw2p-Wfk.js    0.40 kB │ gzip:  0.31 kB │ map:   1.78 kB
+dist/assets/CanvasPool-9Gf99FtZ.js                  0.80 kB │ gzip:  0.45 kB │ map:   3.50 kB
+dist/assets/canvasUtils-By6x9n4d.js                 6.07 kB │ gzip:  2.07 kB │ map:  21.84 kB
+dist/assets/BufferResource-CHMjz1hG.js             10.57 kB │ gzip:  2.81 kB │ map:  25.57 kB
+dist/assets/WebGPURenderer-CaI5dhXK.js             37.78 kB │ gzip: 10.56 kB │ map: 121.24 kB
+dist/assets/FilterSystem-DKkk6B7X.js               40.30 kB │ gzip: 13.07 kB │ map: 159.86 kB
+dist/assets/FederatedEventTarget-BGQ8UmS3.js       42.56 kB │ gzip: 11.09 kB │ map: 155.08 kB
+dist/assets/WebGLRenderer-4UnqJObN.js              67.75 kB │ gzip: 18.59 kB │ map: 214.44 kB
+dist/assets/RenderTargetSystem-D4_io0eT.js         77.17 kB │ gzip: 22.67 kB │ map: 295.31 kB
+dist/assets/CanvasRenderer-lu0yL7Nx.js             79.94 kB │ gzip: 24.36 kB │ map: 404.18 kB
+dist/assets/Geometry-CiJBQvr3.js                  101.60 kB │ gzip: 31.13 kB │ map: 498.88 kB
+dist/assets/index-CsH02Mnj.js                     138.60 kB │ gzip: 41.45 kB │ map: 542.68 kB
+
+✓ built in 185ms
+
+$ npm run lint
+
+> event-horizon@0.1.0 lint
+> eslint .
+
+
+$ npm run test
+
+> event-horizon@0.1.0 test
+> vitest run
+
+
+ RUN  v4.0.15 /Users/kevinhegg/Desktop/event-horizon
+
+ ✓ tests/score-submit.test.ts (3 tests) 14ms
+ ✓ tests/simulation.test.ts (7 tests) 6ms
+ ✓ tests/pulse-simulation.test.ts (14 tests) 24ms
+
+ Test Files  3 passed (3)
+      Tests  24 passed (24)
+   Start at  17:05:12
+   Duration  174ms (transform 129ms, setup 0ms, import 160ms, tests 44ms, environment 0ms)
+
+
+$ npm run test:e2e
+
+> event-horizon@0.1.0 test:e2e
+> playwright test
+
+
+Running 7 tests using 1 worker
+
+(node:71028) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:71028) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 [mobile-chrome] › tests/e2e/playable.spec.ts:4:1 › help states the primary goal clearly (388ms)
+  ✓  2 [mobile-chrome] › tests/e2e/playable.spec.ts:13:1 › legend explains every node type (366ms)
+  ✓  3 [mobile-chrome] › tests/e2e/playable.spec.ts:24:1 › tutorial first screen highlights Battery objectives (372ms)
+  ✓  4 [mobile-chrome] › tests/e2e/playable.spec.ts:33:1 › tapping each node type shows an info card (2.0s)
+  ✓  5 [mobile-chrome] › tests/e2e/playable.spec.ts:46:1 › swipe chain lights Batteries and updates goal HUD state (3.2s)
+  ✓  6 [mobile-chrome] › tests/e2e/playable.spec.ts:70:1 › closing loop shows LOOP READY and sector stabilization is reachable (9.8s)
+  ✓  7 [mobile-chrome] › tests/e2e/playable.spec.ts:94:1 › failure screen names the problem and Fix Chain returns to build (2.1s)
+
+  7 passed (19.0s)
+
+$ npm run score:test
+
+> event-horizon@0.1.0 score:test
+> node scripts/test-score-submit.mjs
+
+[
+  {
+    "status": 200,
+    "body": {
+      "ok": true,
+      "acceptedAt": "2026-05-30T21:05:32.024Z",
+      "score": 1280,
+      "survivalMs": 67421
+    }
+  },
+  {
+    "status": 200,
+    "body": {
+      "ok": true,
+      "acceptedAt": "2026-05-30T21:05:32.026Z",
+      "score": 620,
+      "survivalMs": 12120
+    }
+  }
+]
+
+$ npm run capture:iteration-05
+
+> event-horizon@0.1.0 capture:iteration-05
+> node scripts/capture-iteration-05-artifacts.mjs
+
+Captured docs/artifacts/iteration-05-help-goal-mobile.jpg
+Captured docs/artifacts/iteration-05-node-legend-mobile.jpg
+Captured docs/artifacts/iteration-05-battery-objectives-mobile.jpg
+Captured docs/artifacts/iteration-05-node-info-card-mobile.jpg
+Captured docs/artifacts/iteration-05-loop-ready-mobile.jpg
+Captured docs/artifacts/iteration-05-battery-lit-mobile.jpg
+Captured docs/artifacts/iteration-05-failure-explained-mobile.jpg
+Captured docs/artifacts/iteration-05-sector-stabilized-mobile.jpg
+
+$ npm run report:iteration-05
+
+> event-horizon@0.1.0 report:iteration-05
+> node scripts/generate-iteration-05-report.mjs
+
+Wrote docs/iteration-05-report.md
+Wrote docs/iteration-05-report.pdf (1234 KiB)

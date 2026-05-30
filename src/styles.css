@@ -100,6 +100,7 @@ a {
 #restart-button,
 #share-button,
 #help-button,
+#legend-button,
 #poster-link,
 #pulse-controls button {
   display: grid;
@@ -118,6 +119,7 @@ a {
 #restart-button,
 #share-button,
 #help-button,
+#legend-button,
 #poster-link {
   width: 40px;
   height: 40px;
@@ -148,7 +150,8 @@ a {
   display: none;
 }
 
-#help-overlay {
+#help-overlay,
+#legend-overlay {
   position: fixed;
   inset: 0;
   z-index: 5;
@@ -161,11 +164,13 @@ a {
   touch-action: none;
 }
 
-#help-overlay[hidden] {
+#help-overlay[hidden],
+#legend-overlay[hidden] {
   display: none;
 }
 
-#help-panel {
+#help-panel,
+#legend-panel {
   width: min(92vw, 440px);
   max-height: min(92vh, 760px);
   overflow: auto;
@@ -183,6 +188,12 @@ a {
   letter-spacing: 0;
 }
 
+#legend-panel h1 {
+  margin: 4px 0 12px;
+  font-size: 24px;
+  letter-spacing: 0;
+}
+
 #help-panel h2 {
   margin: 10px 0 3px;
   color: #9ffcff;
@@ -195,6 +206,20 @@ a {
   color: #cfefff;
   font-size: 14px;
   line-height: 1.36;
+}
+
+#legend-panel p {
+  min-height: 58px;
+  margin: 12px 0;
+  color: #dff8ff;
+  font-size: 14px;
+  line-height: 1.28;
+}
+
+#legend-panel strong {
+  color: #ffffff;
+  font-size: 14px;
+  letter-spacing: 0.02em;
 }
 
 #help-panel ol {
@@ -210,7 +235,8 @@ a {
 }
 
 #help-play-button,
-#help-skip-button {
+#help-skip-button,
+#legend-close-button {
   width: 100%;
   min-height: 52px;
   margin-top: 12px;
@@ -228,6 +254,49 @@ a {
   border: 1px solid rgba(179, 226, 255, 0.24);
   background: rgba(7, 12, 25, 0.84);
   color: #f7fbff;
+}
+
+#legend-close-button {
+  background: linear-gradient(90deg, #67f4ff, #d267ff);
+  color: #061120;
+}
+
+.legend-node {
+  float: left;
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  margin: 0 12px 8px 0;
+  border: 2px solid rgba(255, 255, 255, 0.72);
+  border-radius: 50%;
+  color: #061120;
+  font-size: 19px;
+  font-weight: 900;
+}
+
+.legend-node.source {
+  background: #67f4ff;
+}
+
+.legend-node.battery {
+  border-radius: 8px;
+  background: #4dffbf;
+}
+
+.legend-node.relay {
+  background: transparent;
+  color: #9bb6ff;
+}
+
+.legend-node.capacitor {
+  border-radius: 8px;
+  background: #ffd166;
+}
+
+.legend-node.router {
+  clip-path: polygon(50% 0%, 100% 86%, 0% 86%);
+  background: #d267ff;
 }
 
 .help-example {

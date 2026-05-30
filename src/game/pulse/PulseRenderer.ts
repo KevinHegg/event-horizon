@@ -67,7 +67,41 @@ export class PulseRenderer {
       stroke: { color: '#061120', width: 4 }
     })
   });
+  private readonly goalText = new Text({
+    text: '',
+    style: new TextStyle({
+      fill: '#ffffff',
+      fontFamily: 'Inter, system-ui, sans-serif',
+      fontSize: 25,
+      fontWeight: '900',
+      lineHeight: 31,
+      stroke: { color: '#061120', width: 5 }
+    })
+  });
   private readonly meter = new Graphics();
+  private readonly infoCard = new Graphics();
+  private readonly infoTitleText = new Text({
+    text: '',
+    style: new TextStyle({
+      fill: '#ffffff',
+      fontFamily: 'Inter, system-ui, sans-serif',
+      fontSize: 27,
+      fontWeight: '900',
+      stroke: { color: '#061120', width: 4 }
+    })
+  });
+  private readonly infoBodyText = new Text({
+    text: '',
+    style: new TextStyle({
+      fill: '#dff8ff',
+      fontFamily: 'Inter, system-ui, sans-serif',
+      fontSize: 20,
+      fontWeight: '700',
+      lineHeight: 26,
+      wordWrap: true,
+      wordWrapWidth: 780
+    })
+  });
   private readonly debugText = new Text({
     text: '',
     style: new TextStyle({ fill: '#dff8ff', fontFamily: 'SFMono-Regular, Menlo, monospace', fontSize: 17, fontWeight: '600' })
@@ -78,8 +112,11 @@ export class PulseRenderer {
       align: 'center',
       fill: '#ffffff',
       fontFamily: 'Inter, system-ui, sans-serif',
-      fontSize: 40,
+      fontSize: 34,
       fontWeight: '900',
+      lineHeight: 43,
+      wordWrap: true,
+      wordWrapWidth: 860,
       stroke: { color: '#12051c', width: 6 }
     })
   });
@@ -100,14 +137,29 @@ export class PulseRenderer {
       this.hintText,
       this.hud
     );
-    this.hud.addChild(this.meter, this.scoreText, this.metaText, this.strategyText, this.messageText, this.debugText, this.endText);
+    this.hud.addChild(
+      this.meter,
+      this.scoreText,
+      this.metaText,
+      this.goalText,
+      this.strategyText,
+      this.infoCard,
+      this.infoTitleText,
+      this.infoBodyText,
+      this.messageText,
+      this.debugText,
+      this.endText
+    );
     this.hintText.anchor.set(0.5);
     this.hintText.position.set(WORLD_WIDTH / 2, 260);
     this.messageText.anchor.set(0.5);
     this.messageText.position.set(WORLD_WIDTH / 2, 318);
     this.scoreText.position.set(68, 68);
     this.metaText.position.set(72, 130);
-    this.strategyText.position.set(68, 330);
+    this.goalText.position.set(68, 178);
+    this.strategyText.position.set(68, 385);
+    this.infoTitleText.position.set(96, WORLD_HEIGHT - 360);
+    this.infoBodyText.position.set(96, WORLD_HEIGHT - 320);
     this.debugText.position.set(72, 520);
     this.endText.anchor.set(0.5);
     this.endText.position.set(WORLD_WIDTH / 2, WORLD_HEIGHT * 0.52);
@@ -166,11 +218,13 @@ export class PulseRenderer {
       const layer = link.temporary ? this.tempLinkLayer : this.linkLayer;
       const alpha = link.temporary ? clamp(1 - link.ageMs / link.expiresMs, 0, 1) : 1;
       const flash = clamp(link.flashMs / 520, 0, 1);
+      const loopReady = !link.temporary && snapshot.chainAnalysis.sourceLoopClosed;
+      const routerPreferred = !link.temporary && isRouterPreferredLink(snapshot, link);
       this.drawCurve(layer, curvedLinkPath(from, to, link.temporary ? -0.16 : 0.12), {
-        glowColor: link.temporary ? 0xd267ff : 0x4dccff,
-        coreColor: link.temporary ? 0xffffff : 0x9fe7ff,
+        glowColor: link.temporary ? 0xd267ff : loopReady ? 0x4dffbf : routerPreferred ? 0xffd166 : 0x4dccff,
+        coreColor: link.temporary ? 0xffffff : routerPreferred ? 0xffffff : 0x9fe7ff,
         alpha,
-        width: link.temporary ? 9 + flash * 5 : 6 + flash * 4
+        width: link.temporary ? 9 + flash * 5 : (loopReady || routerPreferred ? 8 : 6) + flash * 4
       });
       this.drawFlowDots(layer, from, to, snapshot.timeMs, link.temporary, alpha);
     }
@@ -261,34 +315,59 @@ export class PulseRenderer {
         snapshot.deadEndNodeId === node.id ||
         snapshot.suggestedFixes.some((fix) => fix.fromId === node.id || fix.toId === node.id);
       const color = NODE_COLORS[node.type];
-      const halo = selected || nearest || active || highlighted ? 0.68 : node.type === 'energy' || node.type === 'source' ? 0.34 : 0.22;
-      this.nodeLayer.circle(node.x, node.y, node.radius + 30 + (active || highlighted ? 20 : 0)).fill({ color, alpha: halo * 0.23 });
+      const earlyTutorial =
+        snapshot.tutorialActive &&
+        ['battery-goal', 'swipe-batteries', 'add-battery', 'close-loop', 'press-play', 'loop-alive'].includes(snapshot.tutorialStep);
+      const dimmedForTutorial = earlyTutorial && node.type !== 'source' && node.type !== 'energy' && node.type !== 'conduit';
+      const alphaBase = dimmedForTutorial ? 0.18 : 1;
+      const halo = selected || nearest || active || highlighted ? 0.72 : node.type === 'energy' || node.type === 'source' ? 0.42 : 0.24;
+      if (node.type === 'energy' && !node.lit) {
+        const pulse = 0.42 + Math.sin(snapshot.timeMs * 0.006 + node.id) * 0.18;
+        this.nodeLayer.circle(node.x, node.y, node.radius + 42).stroke({ color: 0xffffff, alpha: pulse * alphaBase, width: 5 });
+      }
+      if (node.type === 'energy' && node.lit) {
+        this.nodeLayer.circle(node.x, node.y, node.radius + 48).fill({ color: 0x4dffbf, alpha: 0.18 });
+        this.nodeLayer.circle(node.x, node.y, node.radius + 24).stroke({ color: 0xffffff, alpha: 0.84, width: 7 });
+      }
+      this.nodeLayer.circle(node.x, node.y, node.radius + 30 + (active || highlighted ? 20 : 0)).fill({ color, alpha: halo * 0.23 * alphaBase });
       if (node.primed) {
         this.nodeLayer.circle(node.x, node.y, node.radius + 26).stroke({ color: 0xffffff, alpha: 0.84, width: 6 });
       }
       if (node.stabilizedMs > 0) {
         this.nodeLayer.circle(node.x, node.y, node.radius + 38).stroke({ color: 0x4dffbf, alpha: 0.76, width: 8 });
       }
-      this.nodeLayer.circle(node.x, node.y, node.radius + 12).stroke({ color: highlighted ? 0xffffff : color, alpha: halo, width: selected || highlighted ? 7 : 4 });
-      if (node.type === 'splitter') {
-        this.nodeLayer.regularPoly(node.x, node.y, node.radius, 3, -Math.PI / 2 + node.splitterPriority * 0.7).fill({ color, alpha: 0.86 });
+      this.nodeLayer.circle(node.x, node.y, node.radius + 12).stroke({
+        color: highlighted ? 0xffffff : color,
+        alpha: halo * alphaBase,
+        width: selected || highlighted ? 7 : 4
+      });
+      if (node.type === 'source') {
+        this.nodeLayer.circle(node.x, node.y, node.radius).fill({ color, alpha: 0.9 * alphaBase });
+        this.nodeLayer.regularPoly(node.x + 4, node.y, node.radius * 0.45, 3, Math.PI / 2).fill({ color: 0x061120, alpha: 0.72 * alphaBase });
+      } else if (node.type === 'energy') {
+        this.nodeLayer.regularPoly(node.x, node.y, node.radius, 5, -Math.PI / 2).fill({ color, alpha: (node.lit ? 0.98 : 0.82) * alphaBase });
+        this.nodeLayer.circle(node.x, node.y, node.radius * 0.62).fill({ color: node.lit ? 0xffffff : 0x061120, alpha: node.lit ? 0.34 : 0.18 });
+      } else if (node.type === 'splitter') {
+        this.nodeLayer.regularPoly(node.x, node.y, node.radius, 3, -Math.PI / 2 + node.splitterPriority * 0.7).fill({ color, alpha: 0.86 * alphaBase });
+        this.nodeLayer.circle(node.x, node.y, node.radius + 26).stroke({ color: 0xffd166, alpha: 0.3 * alphaBase, width: 4 });
       } else if (node.type === 'delay') {
-        this.nodeLayer.roundRect(node.x - node.radius * 0.74, node.y - node.radius * 0.74, node.radius * 1.48, node.radius * 1.48, 12).fill({ color, alpha: 0.88 });
+        this.nodeLayer.roundRect(node.x - node.radius * 0.74, node.y - node.radius * 0.74, node.radius * 1.48, node.radius * 1.48, 12).fill({ color, alpha: 0.88 * alphaBase });
         for (let tick = 0; tick <= node.delayLevel; tick += 1) {
-          this.nodeLayer.roundRect(node.x - 22 + tick * 22, node.y + node.radius + 16, 13, 7, 3).fill({ color: 0xffffff, alpha: 0.78 });
+          this.nodeLayer.roundRect(node.x - 22 + tick * 22, node.y + node.radius + 16, 13, 7, 3).fill({ color: 0xffffff, alpha: 0.78 * alphaBase });
         }
       } else {
-        this.nodeLayer.circle(node.x, node.y, node.radius).fill({ color, alpha: 0.88 });
+        this.nodeLayer.circle(node.x, node.y, node.radius).stroke({ color, alpha: 0.9 * alphaBase, width: 8 });
+        this.nodeLayer.circle(node.x, node.y, node.radius * 0.42).fill({ color, alpha: 0.72 * alphaBase });
       }
-      this.nodeLayer.circle(node.x, node.y, node.radius * 0.45).fill({ color: 0xffffff, alpha: active ? 0.82 : 0.36 });
+      this.nodeLayer.circle(node.x, node.y, node.radius * 0.24).fill({ color: 0xffffff, alpha: (active ? 0.82 : 0.26) * alphaBase });
       const text = this.nodeText(node.id);
       text.text = iconForNode(node);
       text.position.set(node.x, node.y - 2);
       text.visible = true;
       visibleNodeIds.add(node.id);
-      if (snapshot.tutorialActive && highlighted) {
+      if ((snapshot.tutorialActive && highlighted) || (node.type === 'energy' && (node.required || node.lit))) {
         const label = this.nodeText(node.id + 1000);
-        label.text = node.type === 'energy' ? 'ENERGY' : node.label;
+        label.text = node.type === 'energy' ? (node.lit ? 'BATTERY LIT' : 'BATTERY') : node.label;
         label.position.set(node.x, node.y + node.radius + 46);
         label.visible = true;
         visibleNodeIds.add(node.id + 1000);
@@ -315,18 +394,31 @@ export class PulseRenderer {
   }
 
   private renderHud(snapshot: PulseSnapshot, input: PulseInputViewState, debug: boolean): void {
-    this.scoreText.text = String(snapshot.score);
+    this.scoreText.text = `Score ${snapshot.score}`;
     this.metaText.text = `x${snapshot.multiplier}  LINKS ${snapshot.linksUsed}/${snapshot.linkBudget}  LENS ${snapshot.lensCharges}/2  BEST ${Math.max(snapshot.score, Number(localStorage.getItem('eventHorizon.bestScore') ?? 0))}`;
+    this.goalText.visible = snapshot.phase !== 'ended';
+    this.goalText.text =
+      snapshot.phase === 'build'
+        ? [
+            'GOAL',
+            `Light ${snapshot.batteriesLit}/${snapshot.batteriesRequired} Batteries`,
+            `Loop: ${snapshot.chainAnalysis.sourceLoopClosed ? 'Yes' : 'No'}`,
+            'Press Play'
+          ].join('\n')
+        : [
+            'GOAL',
+            `Batteries lit: ${snapshot.batteriesLit}/${snapshot.batteriesRequired}`,
+            `Loop: ${snapshot.loopClosed ? 'active' : 'broken'}`,
+            `Collapse: ${snapshot.darkEnergy < 25 ? 'danger' : 'stable'}`
+          ].join('\n');
     this.strategyText.visible = snapshot.phase === 'build';
     this.strategyText.text = [
-      'BUILD A CHAIN',
-      'Hit Energy nodes.',
-      'Use Delay nodes.',
-      'Avoid dead ends.',
-      `Energy ${snapshot.chainAnalysis.reachableEnergyNodes}/${snapshot.chainAnalysis.totalEnergyNodes}`,
+      'CHAIN STATUS',
+      `Batteries reachable ${snapshot.chainAnalysis.reachableBatteryNodes}/${snapshot.chainAnalysis.totalRequiredBatteries}`,
       `Dead ends ${snapshot.chainAnalysis.deadEndNodeIds.length}`,
-      `Loop ${snapshot.chainAnalysis.hasLoop ? 'Yes' : 'No'}`,
-      snapshot.chainAnalysis.quality
+      `Loop ${snapshot.chainAnalysis.sourceLoopClosed ? 'Yes' : 'No'}`,
+      snapshot.chainAnalysis.hint,
+      snapshot.chainAnalysis.sourceLoopClosed ? 'LOOP READY' : 'CONNECT BACK TO SOURCE'
     ].join('\n');
     this.hintText.text = snapshot.tutorialHint;
     this.hintText.visible = snapshot.phase !== 'ended';
@@ -335,17 +427,17 @@ export class PulseRenderer {
     this.meter.clear();
     const meterWidth = WORLD_WIDTH - 156;
     const fill = meterWidth * clamp(snapshot.darkEnergy / MAX_ENERGY, 0, 1);
+    this.meter.roundRect(78, WORLD_HEIGHT - 178, 270, 30, 4).fill({ color: 0x03040a, alpha: 0.54 });
     this.meter.roundRect(78, WORLD_HEIGHT - 136, meterWidth, 40, 8).fill({ color: 0x061120, alpha: 0.9 });
     this.meter.roundRect(78, WORLD_HEIGHT - 136, meterWidth, 40, 8).stroke({ color: 0x78f2ff, alpha: 0.35, width: 2 });
     this.meter.roundRect(86, WORLD_HEIGHT - 126, fill, 20, 6).fill({ color: snapshot.darkEnergy < 25 ? 0xff5d73 : 0x67f4ff, alpha: 0.96 });
-    this.meter.roundRect(86, WORLD_HEIGHT - 172, 220, 28, 4).fill({ color: 0x03040a, alpha: 0.46 });
-    this.meter.roundRect(0, 0, 0, 0, 0);
+    this.renderInfoCard(snapshot);
     this.endText.visible = snapshot.phase === 'ended';
     if (snapshot.phase === 'ended') {
       const fix = snapshot.suggestedFixes[0];
-      this.endText.text = snapshot.endReason === 'pulse-died'
-        ? `PULSE LOST\nDead end at: ${nodeLabel(snapshot, snapshot.deadEndNodeId)}\n${fix ? `Try linking this node\nto ${nodeLabel(snapshot, fix.toId)}.` : 'Try adding one more outgoing link.'}`
-        : `${snapshot.stabilized ? 'SECTOR STABILIZED' : 'GALAXY COLLAPSED'}\n${snapshot.score}  •  ${formatTime(snapshot.timeMs)}\nEnergy nodes hit ${snapshot.chainAnalysis.reachableEnergyNodes}/${snapshot.chainAnalysis.totalEnergyNodes}\nSEED ${snapshot.seed}`;
+      this.endText.text = snapshot.stabilized
+        ? `SECTOR STABILIZED\nBatteries lit: ${snapshot.batteriesLit}/${snapshot.batteriesRequired}\nLoop held: ${formatTime(snapshot.loopHoldMs)}\nSEED ${snapshot.seed}`
+        : `${snapshot.endReason === 'pulse-died' ? 'PULSE LOST' : 'GALAXY COLLAPSED'}\nBatteries lit: ${snapshot.batteriesLit}/${snapshot.batteriesRequired}\nProblem: ${shortFailure(snapshot.failureReason)}\n${fix ? fix.message : 'Fix: close the loop.'}`;
     } else {
       this.endText.text = '';
     }
@@ -357,11 +449,29 @@ export class PulseRenderer {
         `selected: ${input.selectedNodeId ?? '--'} nearest: ${input.nearestNodeId ?? '--'}`,
         `links: ${snapshot.linksUsed}/${snapshot.linkBudget} pulses: ${snapshot.pulses.length}`,
         `chain: ${snapshot.lastChainNodeIds.join('>') || '--'}`,
-        `analysis: ${snapshot.chainAnalysis.quality}`,
+        `analysis: ${snapshot.chainAnalysis.hint}`,
+        `batteries: ${snapshot.batteriesLit}/${snapshot.batteriesRequired} loop: ${snapshot.loopClosed ? 'yes' : 'no'}`,
         `last: ${snapshot.lastInputResult.message}`,
         `hash: ${snapshot.stepHash}`
       ].join('\n');
     }
+  }
+
+  private renderInfoCard(snapshot: PulseSnapshot): void {
+    this.infoCard.clear();
+    const card = snapshot.nodeInfoCard;
+    const visible = snapshot.phase === 'build' && card !== undefined;
+    this.infoTitleText.visible = visible;
+    this.infoBodyText.visible = visible;
+    if (!visible || !card) {
+      this.infoTitleText.text = '';
+      this.infoBodyText.text = '';
+      return;
+    }
+    this.infoCard.roundRect(72, WORLD_HEIGHT - 382, WORLD_WIDTH - 144, 154, 8).fill({ color: 0x061120, alpha: 0.9 });
+    this.infoCard.roundRect(72, WORLD_HEIGHT - 382, WORLD_WIDTH - 144, 154, 8).stroke({ color: 0x78f2ff, alpha: 0.34, width: 2 });
+    this.infoTitleText.text = card.title;
+    this.infoBodyText.text = `${card.body}\n${card.action}`;
   }
 
   private drawCurve(
@@ -449,10 +559,10 @@ function pulsePoint(snapshot: PulseSnapshot, fromId: number, toId: number | unde
 
 function iconForNode(node: PulseNode): string {
   if (node.type === 'source') {
-    return 'S';
+    return '▶';
   }
   if (node.type === 'energy') {
-    return '+';
+    return '★';
   }
   if (node.type === 'delay') {
     return 'II';
@@ -460,7 +570,7 @@ function iconForNode(node: PulseNode): string {
   if (node.type === 'splitter') {
     return 'Y';
   }
-  return 'o';
+  return '•';
 }
 
 function pointAlongPolyline(points: readonly WorldPoint[], t: number): WorldPoint {
@@ -492,11 +602,29 @@ function pointAlongPolyline(points: readonly WorldPoint[], t: number): WorldPoin
   return points[points.length - 1];
 }
 
-function nodeLabel(snapshot: PulseSnapshot, nodeId: number | undefined): string {
-  const node = nodeId === undefined ? undefined : findNode(snapshot.nodes, nodeId);
-  if (!node) {
-    return 'UNKNOWN NODE';
+function isRouterPreferredLink(snapshot: PulseSnapshot, link: { fromId: number; toId: number; temporary: boolean }): boolean {
+  if (link.temporary) {
+    return false;
   }
-  const label = node.type === 'energy' ? 'ENERGY' : node.label;
-  return `${label} ${node.id}`;
+  const node = findNode(snapshot.nodes, link.fromId);
+  if (!node || node.type !== 'splitter') {
+    return false;
+  }
+  const outgoing = snapshot.links
+    .filter((candidate) => !candidate.temporary && candidate.fromId === node.id)
+    .sort((a, b) => ((a.toId + node.splitterPriority * 7) % 13) - ((b.toId + node.splitterPriority * 7) % 13));
+  return outgoing[0]?.toId === link.toId;
+}
+
+function shortFailure(reason: string): string {
+  if (reason.includes('Batteries')) {
+    return 'Not enough Batteries were lit';
+  }
+  if (reason.includes('return to Source')) {
+    return 'Loop broken';
+  }
+  if (reason.includes('dead end') || reason.includes('ended at')) {
+    return 'Pulse hit a dead end';
+  }
+  return reason || 'Collapse Meter emptied';
 }
